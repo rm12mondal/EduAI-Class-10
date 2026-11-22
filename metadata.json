@@ -1,0 +1,6 @@
+{
+  "name": "EduAI Class 10",
+  "description": "West Bengal Board (WBBSE) Class 10 hybrid offline and online AI study chatbot covering all 7 subjects with local GGUF Llama model handling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

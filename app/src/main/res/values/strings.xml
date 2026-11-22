@@ -1,0 +1,51 @@
+<resources>
+    <string name="app_name">EduAI Class 10</string>
+    <string name="app_subtitle">WBBSE মাধ্যমিক এআই সহায়ক</string>
+
+    <!-- Navigation -->
+    <string name="nav_chat">চ্যাট</string>
+    <string name="nav_subjects">৭টি বিষয়</string>
+    <string name="nav_model">মডেল ও সেটিংস</string>
+
+    <!-- Hybrid Mode -->
+    <string name="mode_offline">অফলাইন</string>
+    <string name="mode_online">অনলাইন</string>
+    <string name="mode_offline_desc">স্থানীয় WBBSE ডেটা ও Llama-3.2 GGUF</string>
+    <string name="mode_online_desc">অনলাইন মোড (স্যাম্পল প্রিভিউ)</string>
+    <string name="online_firebase_notice">অনলাইন লাইভ Gemini AI চালু করতে Firebase AI Logic প্রয়োজন। বর্তমানে WBBSE সিলেবাস ভিত্তিক নমুনা (Sample) অনলাইন উত্তর দেখানো হচ্ছে।</string>
+    <string name="network_online_label">ইন্টারনেট সংযুক্ত</string>
+    <string name="network_offline_label">অফলাইন নেটওয়ার্ক</string>
+
+    <!-- Chat -->
+    <string name="chat_welcome_title">মাধ্যমিক ২০২৬-এর স্মার্ট পড়াশোনা</string>
+    <string name="chat_welcome_subtitle">পশ্চিমবঙ্গ বোর্ডের ক্লাস ১০-এর ৭টি বিষয়ের যেকোনো প্রশ্ন বাংলা বা ইংরেজিতে জিজ্ঞেস করো।</string>
+    <string name="chat_input_placeholder">তোমার প্রশ্ন লেখো (বাংলা বা English)…</string>
+    <string name="chat_send_cd">প্রশ্ন পাঠাও</string>
+    <string name="chat_clear_cd">নতুন চ্যাট শুরু করো</string>
+    <string name="chat_copy_cd">উত্তর কপি করো</string>
+    <string name="chat_copied_toast">উত্তর কপি করা হয়েছে</string>
+    <string name="chat_thinking">উত্তর তৈরি হচ্ছে…</string>
+    <string name="chat_quick_prompts">জনপ্রিয় মাধ্যমিক প্রশ্ন</string>
+    <string name="subject_all">সব বিষয়</string>
+
+    <!-- Subjects -->
+    <string name="subjects_title">WBBSE মাস্টার ডেটা (৭টি বিষয়)</string>
+    <string name="subjects_subtitle">অধ্যায়ভিত্তিক নোট, সূত্র ও মাধ্যমিক টিপস</string>
+    <string name="subjects_search_hint">অধ্যায়, সূত্র বা বিষয় খুঁজো…</string>
+    <string name="subjects_add_note">নতুন নোট যোগ করো</string>
+    <string name="subjects_ask_tutor">এই টপিক নিয়ে প্রশ্ন করো</string>
+    <string name="subjects_back_cd">ফিরে যাও</string>
+    <string name="subjects_bookmark_cd">বুকমার্ক টগল করো</string>
+
+    <!-- Model & Files -->
+    <string name="model_title">অফলাইন Llama মডেল ও ফাইল</string>
+    <string name="model_subtitle">Llama-3.2-1B-Instruct.Q4_K_M.gguf হ্যান্ডলিং</string>
+    <string name="model_import_button">GGUF ফাইল নির্বাচন করুন</string>
+    <string name="model_scan_button">ফোল্ডার স্ক্যান করুন</string>
+    <string name="model_test_gguf_button">ডায়াগনস্টিক GGUF টেস্ট</string>
+    <string name="model_load_button">মডেল লোড করুন</string>
+    <string name="model_unload_button">আনলোড করুন</string>
+    <string name="model_delete_button">মুছুন</string>
+    <string name="model_settings_title">ইনফারেন্স ও হাইব্রিড সেটিংস</string>
+    <string name="model_clear_chat">সব চ্যাট ইতিহাস মুছুন</string>
+</resources>
