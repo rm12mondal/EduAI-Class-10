@@ -50,3 +50,15 @@ interface ChatMessageDao {
     @Query("SELECT COUNT(*) FROM chat_messages")
     fun observeCount(): Flow<Int>
 }
+
+@Dao
+interface ExamAttemptDao {
+    @Query("SELECT * FROM exam_attempts ORDER BY timestamp DESC, id DESC")
+    fun observeAllAttempts(): Flow<List<ExamAttemptEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAttempt(attempt: ExamAttemptEntity): Long
+
+    @Query("DELETE FROM exam_attempts")
+    suspend fun clearAllAttempts()
+}

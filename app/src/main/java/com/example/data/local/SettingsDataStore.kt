@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
+import com.example.model.TtsVoiceSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -20,7 +21,8 @@ private val Context.eduAiDataStore: DataStore<Preferences> by preferencesDataSto
 data class StoredAppSettings(
     val inferenceMode: InferenceMode = InferenceMode.OFFLINE,
     val activeModelPath: String? = null,
-    val llamaConfig: LlamaInferenceConfig = LlamaInferenceConfig()
+    val llamaConfig: LlamaInferenceConfig = LlamaInferenceConfig(),
+    val ttsSettings: TtsVoiceSettings = TtsVoiceSettings()
 )
 
 class SettingsDataStore(private val context: Context) {
@@ -32,6 +34,11 @@ class SettingsDataStore(private val context: Context) {
         val TEMPERATURE = floatPreferencesKey("llama_temperature")
         val MAX_TOKENS = intPreferencesKey("llama_max_tokens")
         val CPU_THREADS = intPreferencesKey("llama_cpu_threads")
+
+        val TTS_BENGALI_VOICE = stringPreferencesKey("tts_bengali_voice_name")
+        val TTS_ENGLISH_VOICE = stringPreferencesKey("tts_english_voice_name")
+        val TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
+        val TTS_PITCH = floatPreferencesKey("tts_pitch")
     }
 
     val settingsFlow: Flow<StoredAppSettings> = context.eduAiDataStore.data.map { prefs ->
@@ -43,6 +50,12 @@ class SettingsDataStore(private val context: Context) {
                 temperature = prefs[Keys.TEMPERATURE] ?: 0.4f,
                 maxTokens = prefs[Keys.MAX_TOKENS] ?: 512,
                 cpuThreads = prefs[Keys.CPU_THREADS] ?: 4
+            ),
+            ttsSettings = TtsVoiceSettings(
+                bengaliVoiceName = prefs[Keys.TTS_BENGALI_VOICE],
+                englishVoiceName = prefs[Keys.TTS_ENGLISH_VOICE],
+                speechRate = (prefs[Keys.TTS_SPEECH_RATE] ?: 1.0f).coerceIn(0.7f, 1.5f),
+                pitch = (prefs[Keys.TTS_PITCH] ?: 1.0f).coerceIn(0.8f, 1.2f)
             )
         )
     }
@@ -69,6 +82,23 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.TEMPERATURE] = config.temperature
             prefs[Keys.MAX_TOKENS] = config.maxTokens
             prefs[Keys.CPU_THREADS] = config.cpuThreads
+        }
+    }
+
+    suspend fun updateTtsSettings(settings: TtsVoiceSettings) {
+        context.eduAiDataStore.edit { prefs ->
+            if (settings.bengaliVoiceName.isNullOrBlank()) {
+                prefs.remove(Keys.TTS_BENGALI_VOICE)
+            } else {
+                prefs[Keys.TTS_BENGALI_VOICE] = settings.bengaliVoiceName
+            }
+            if (settings.englishVoiceName.isNullOrBlank()) {
+                prefs.remove(Keys.TTS_ENGLISH_VOICE)
+            } else {
+                prefs[Keys.TTS_ENGLISH_VOICE] = settings.englishVoiceName
+            }
+            prefs[Keys.TTS_SPEECH_RATE] = settings.speechRate.coerceIn(0.7f, 1.5f)
+            prefs[Keys.TTS_PITCH] = settings.pitch.coerceIn(0.8f, 1.2f)
         }
     }
 }

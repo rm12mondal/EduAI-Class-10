@@ -26,5 +26,19 @@ data class ChatMessageEntity(
     val mode: String, // "offline" or "online"
     val sourceLabel: String,
     val latencyMs: Long = 0L,
+    val timestamp: Long = System.currentTimeMillis(),
+    val imagePath: String? = null
+)
+
+@Entity(tableName = "exam_attempts")
+data class ExamAttemptEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subjectId: String,
+    val examType: String, // "MCQ", "SAQ", "LONG"
+    val questionSummary: String,
+    val scoreObtained: Float,
+    val maxMarks: Float,
+    val accuracyPercent: Int,
+    val feedbackSummary: String,
     val timestamp: Long = System.currentTimeMillis()
 )

@@ -11,9 +11,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Quiz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -33,12 +35,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
 import com.example.model.AppTab
 import com.example.ui.chat.ChatScreen
+import com.example.ui.exam.ExamScreen
 import com.example.ui.model.ModelManagerScreen
 import com.example.ui.subjects.SubjectsScreen
 import com.example.viewmodel.EduAiUiState
@@ -67,6 +71,13 @@ private val appDestinations = listOf(
         selectedIcon = Icons.Rounded.LibraryBooks,
         unselectedIcon = Icons.Outlined.LibraryBooks,
         testTag = "nav_tab_subjects"
+    ),
+    NavDestination(
+        tab = AppTab.EXAMS,
+        labelRes = R.string.nav_exams,
+        selectedIcon = Icons.Rounded.Quiz,
+        unselectedIcon = Icons.Outlined.Quiz,
+        testTag = "nav_tab_exams"
     ),
     NavDestination(
         tab = AppTab.MODEL_HUB,
@@ -115,7 +126,13 @@ fun EduAiApp(
                                         contentDescription = stringResource(dest.labelRes)
                                     )
                                 },
-                                label = { Text(stringResource(dest.labelRes)) },
+                                label = {
+                                    Text(
+                                        text = stringResource(dest.labelRes),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
                                 modifier = Modifier.testTag(dest.testTag)
                             )
                         }
@@ -143,7 +160,13 @@ fun EduAiApp(
                                         contentDescription = stringResource(dest.labelRes)
                                     )
                                 },
-                                label = { Text(stringResource(dest.labelRes)) },
+                                label = {
+                                    Text(
+                                        text = stringResource(dest.labelRes),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                },
                                 modifier = Modifier.testTag(dest.testTag)
                             )
                         }
@@ -176,6 +199,9 @@ private fun ActiveScreenHost(
             onToggleMode = viewModel::toggleInferenceMode,
             onSelectSubject = viewModel::selectChatSubject,
             onSendQuestion = { q -> viewModel.sendQuestion(q) },
+            onAttachPhotoUri = viewModel::attachChatPhotoUri,
+            onClearPendingPhoto = viewModel::clearPendingChatPhoto,
+            onToggleSpeakMessage = viewModel::toggleSpeakMessage,
             onClearChat = viewModel::clearChatHistory,
             onOpenModelHub = { viewModel.selectTab(AppTab.MODEL_HUB) },
             onShowToast = onShowSnackbar
@@ -193,6 +219,19 @@ private fun ActiveScreenHost(
             onDeleteCustomNote = viewModel::deleteCustomNote
         )
 
+        AppTab.EXAMS -> ExamScreen(
+            uiState = uiState,
+            onSelectSubject = viewModel::selectExamSubject,
+            onSelectFormat = viewModel::selectExamFormat,
+            onRecordMcqResult = viewModel::recordMcqResult,
+            onAttachExamPhotoUri = viewModel::attachExamPhotoUri,
+            onClearExamPhoto = viewModel::clearPendingExamPhoto,
+            onEvaluateSubjective = viewModel::evaluateSubjectiveExam,
+            onClearEvaluation = viewModel::clearLatestExamEvaluation,
+            onClearExamHistory = viewModel::clearExamHistory,
+            onShowSnackbar = onShowSnackbar
+        )
+
         AppTab.MODEL_HUB -> ModelManagerScreen(
             uiState = uiState,
             onImportGgufUri = viewModel::importGgufFromUri,
@@ -203,6 +242,9 @@ private fun ActiveScreenHost(
             onDeleteModel = viewModel::deleteModelFile,
             onToggleInferenceMode = viewModel::toggleInferenceMode,
             onUpdateLlamaConfig = viewModel::updateLlamaConfig,
+            onUpdateTtsVoiceSettings = viewModel::updateTtsVoiceSettings,
+            onTestTtsVoice = viewModel::testTtsVoice,
+            onRefreshTtsVoices = viewModel::refreshTtsVoices,
             onClearChatHistory = viewModel::clearChatHistory,
             onDismissStatusBanner = viewModel::dismissModelStatusBanner
         )

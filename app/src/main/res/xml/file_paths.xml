@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="notebook_photos"
+        path="notebook_photos/" />
+    <files-path
+        name="chat_uploads"
+        path="chat_uploads/" />
+</paths>

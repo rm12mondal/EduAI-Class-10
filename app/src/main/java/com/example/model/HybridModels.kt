@@ -51,5 +51,20 @@ data class DiscoveredGgufFile(
 enum class AppTab {
     CHAT,
     SUBJECTS,
+    EXAMS,
     MODEL_HUB
 }
+
+data class TtsVoiceSettings(
+    val bengaliVoiceName: String? = null,
+    val englishVoiceName: String? = null,
+    val speechRate: Float = 1.0f,
+    val pitch: Float = 1.0f
+)
+
+data class TtsVoiceOption(
+    val voiceName: String,
+    val displayLabel: String,
+    val localeTag: String,
+    val isNetworkRequired: Boolean
+)

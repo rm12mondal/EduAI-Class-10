@@ -67,6 +67,7 @@ import com.example.model.GgufFileMetadata
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
+import com.example.model.TtsVoiceSettings
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -86,6 +87,9 @@ fun ModelManagerScreen(
     onDeleteModel: (String) -> Unit,
     onToggleInferenceMode: (Boolean) -> Unit,
     onUpdateLlamaConfig: (LlamaInferenceConfig) -> Unit,
+    onUpdateTtsVoiceSettings: (TtsVoiceSettings) -> Unit,
+    onTestTtsVoice: (Boolean) -> Unit,
+    onRefreshTtsVoices: () -> Unit,
     onClearChatHistory: () -> Unit,
     onDismissStatusBanner: () -> Unit,
     modifier: Modifier = Modifier
@@ -357,7 +361,18 @@ fun ModelManagerScreen(
                 }
             }
 
-            // 4. Hybrid Mode & Llama Inference Parameters
+            // 4. Voice & Speech Settings Card (Bengali bn-IN & English en-US TTS)
+            item {
+                VoiceSpeechSettingsCard(
+                    ttsState = uiState.ttsState,
+                    voiceSettings = uiState.ttsVoiceSettings,
+                    onUpdateSettings = onUpdateTtsVoiceSettings,
+                    onTestVoice = onTestTtsVoice,
+                    onRefreshVoices = onRefreshTtsVoices
+                )
+            }
+
+            // 5. Hybrid Mode & Llama Inference Parameters
             item {
                 Card(
                     shape = RoundedCornerShape(20.dp),
@@ -397,7 +412,7 @@ fun ModelManagerScreen(
                                 )
                                 Text(
                                     text = if (isOnlineMode) {
-                                        "অনলাইন প্রিভিউ সক্রিয় (লাইভ Gemini-র জন্য Firebase প্রয়োজন)"
+                                        "লাইভ Firebase AI Logic (Gemini 3.8 Flash) সক্রিয়"
                                     } else {
                                         "সম্পূর্ণ অফলাইন WBBSE + Llama-3.2 GGUF মোড সক্রিয়"
                                     },

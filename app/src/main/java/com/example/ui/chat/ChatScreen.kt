@@ -1,6 +1,11 @@
 package com.example.ui.chat
 
-import androidx.compose.animation.AnimatedVisibility
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
@@ -31,33 +36,43 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.rounded.AddAPhoto
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.OfflineBolt
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.School
-import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,8 +80,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -75,8 +92,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.local.ChatMessageEntity
+import com.example.data.media.NotebookImageHelper
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
 import com.example.model.WbbseSubject
@@ -85,6 +104,7 @@ import com.example.ui.theme.OnlineCobaltContainer
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.SageOfflineContainer
 import com.example.viewmodel.EduAiUiState
+import com.example.viewmodel.PendingPhotoAttachment
 import com.example.viewmodel.StreamingDraft
 
 @Composable
@@ -93,15 +113,52 @@ fun ChatScreen(
     onToggleMode: (Boolean) -> Unit,
     onSelectSubject: (WbbseSubject?) -> Unit,
     onSendQuestion: (String) -> Unit,
+    onAttachPhotoUri: (Uri) -> Unit,
+    onClearPendingPhoto: () -> Unit,
+    onToggleSpeakMessage: (Long, String) -> Unit,
     onClearChat: () -> Unit,
     onOpenModelHub: () -> Unit,
     onShowToast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var inputText by rememberSaveable { mutableStateOf("") }
+    var showPhotoSourceDialog by remember { mutableStateOf(false) }
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val copiedToastMsg = stringResource(R.string.chat_copied_toast)
+    val cameraDeniedMsg = stringResource(R.string.camera_permission_denied)
+
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = tempCameraUri
+        if (success && uri != null) {
+            onAttachPhotoUri(uri)
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            val uri = NotebookImageHelper.createTempCameraImageUri(context)
+            tempCameraUri = uri
+            takePictureLauncher.launch(uri)
+        } else {
+            onShowToast(cameraDeniedMsg)
+        }
+    }
+
+    val galleryPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            onAttachPhotoUri(uri)
+        }
+    }
 
     val totalItems = uiState.chatMessages.size + if (uiState.streamingDraft != null) 1 else 0
     LaunchedEffect(totalItems, uiState.streamingDraft?.text?.length) {
@@ -124,12 +181,7 @@ fun ChatScreen(
             onOpenModelHub = onOpenModelHub
         )
 
-        // 2. Online Mode Firebase Notice (shown whenever Online Mode is active)
-        AnimatedVisibility(visible = uiState.inferenceMode == InferenceMode.ONLINE) {
-            OnlineModeNoticeBanner()
-        }
-
-        // 3. 7-Subject WBBSE Filter Strip
+        // 2. 7-Subject WBBSE Filter Strip
         SubjectFilterRow(
             selectedSubject = uiState.selectedChatSubject,
             onSelectSubject = onSelectSubject
@@ -140,7 +192,7 @@ fun ChatScreen(
             thickness = 1.dp
         )
 
-        // 4. Chat Conversation Area or Welcome Empty State
+        // 3. Chat Conversation Area or Welcome Empty State
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -174,6 +226,10 @@ fun ChatScreen(
                     ) { message ->
                         ChatBubbleItem(
                             message = message,
+                            isSpeaking = uiState.ttsState.speakingMessageId == message.id,
+                            onToggleSpeak = {
+                                onToggleSpeakMessage(message.id, message.content)
+                            },
                             onCopyClick = {
                                 clipboard.setText(AnnotatedString(message.content))
                                 onShowToast(copiedToastMsg)
@@ -190,14 +246,17 @@ fun ChatScreen(
             }
         }
 
-        // 5. Message Composer Bar
+        // 4. Message Composer Bar with Notebook Photo Attachment
         ChatComposerBar(
             value = inputText,
             onValueChange = { inputText = it },
             selectedSubject = uiState.selectedChatSubject,
+            pendingPhoto = uiState.pendingChatPhoto,
             isGenerating = uiState.isGenerating,
+            onAttachPhotoClick = { showPhotoSourceDialog = true },
+            onClearPhoto = onClearPendingPhoto,
             onSend = {
-                if (inputText.isNotBlank()) {
+                if (inputText.isNotBlank() || uiState.pendingChatPhoto != null) {
                     val toSend = inputText
                     inputText = ""
                     onSendQuestion(toSend)
@@ -205,6 +264,91 @@ fun ChatScreen(
             }
         )
     }
+
+    if (showPhotoSourceDialog) {
+        NotebookPhotoSourceDialog(
+            isOnlineMode = uiState.inferenceMode == InferenceMode.ONLINE,
+            onDismiss = { showPhotoSourceDialog = false },
+            onTakePhoto = {
+                showPhotoSourceDialog = false
+                val hasCamera = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.CAMERA
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasCamera) {
+                    val uri = NotebookImageHelper.createTempCameraImageUri(context)
+                    tempCameraUri = uri
+                    takePictureLauncher.launch(uri)
+                } else {
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                }
+            },
+            onPickGallery = {
+                showPhotoSourceDialog = false
+                galleryPickerLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            }
+        )
+    }
+}
+
+@Composable
+private fun NotebookPhotoSourceDialog(
+    isOnlineMode: Boolean,
+    onDismiss: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onPickGallery: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.photo_picker_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = if (isOnlineMode) {
+                        "খাতার হাতের লেখার পরিষ্কার ছবি তুলে বা গ্যালারি থেকে বেছে পাঠাও—Gemini AI বানান, তথ্য ও মাধ্যমিক মান অনুযায়ী মূল্যায়ন করবে।"
+                    } else {
+                        "দ্রষ্টব্য: খাতার ছবি মূল্যায়ন করতে উপরের হাইব্রিড সুইচ দিয়ে অনলাইন মোড (Online) চালু রেখো।"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                FilledTonalButton(
+                    onClick = onTakePhoto,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .testTag("chat_camera_option_button")
+                ) {
+                    Icon(Icons.Rounded.CameraAlt, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.photo_take_camera))
+                }
+
+                OutlinedButton(
+                    onClick = onPickGallery,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .testTag("chat_gallery_option_button")
+                ) {
+                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.photo_choose_gallery))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("বাতিল")
+            }
+        }
+    )
 }
 
 @Composable
@@ -351,7 +495,7 @@ private fun HybridChatHeader(
                             }
                             val statusSubtext = if (isOnlineMode) {
                                 if (uiState.isDeviceOnline) {
-                                    "ইন্টারনেট চালু • স্যাম্পল অনলাইন প্রিভিউ"
+                                    "Firebase AI Logic • Gemini 3.8 Flash (Live)"
                                 } else {
                                     "নেটওয়ার্ক বিচ্ছিন্ন • অফলাইন মোডে সুইচ করো"
                                 }
@@ -398,36 +542,6 @@ private fun HybridChatHeader(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun OnlineModeNoticeBanner() {
-    Surface(
-        color = OnlineCobaltContainer.copy(alpha = 0.7f),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("online_firebase_notice_banner")
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.WarningAmber,
-                contentDescription = null,
-                tint = OnlineCobalt,
-                modifier = Modifier.size(18.dp)
-            )
-            Text(
-                text = stringResource(R.string.online_firebase_notice),
-                style = MaterialTheme.typography.bodySmall,
-                color = OnlineCobalt
-            )
         }
     }
 }
@@ -560,7 +674,7 @@ private fun ChatWelcomeState(
                                     text = if (inferenceMode == InferenceMode.OFFLINE) {
                                         "OFFLINE • 7 SUBJECTS READY"
                                     } else {
-                                        "ONLINE PREVIEW • WBBSE"
+                                        "ONLINE LIVE • GEMINI 3.8 FLASH"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = Color.White,
@@ -634,11 +748,16 @@ private fun ChatWelcomeState(
 @Composable
 private fun ChatBubbleItem(
     message: ChatMessageEntity,
+    isSpeaking: Boolean,
+    onToggleSpeak: () -> Unit,
     onCopyClick: () -> Unit
 ) {
     val isUser = message.role == "user"
     val subject = WbbseSubject.fromId(message.subjectId)
     val isOnlineMsg = message.mode == InferenceMode.ONLINE.storageValue
+    val attachedBitmap = remember(message.imagePath) {
+        message.imagePath?.let { NotebookImageHelper.decodeFileThumbnail(it) }
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -658,7 +777,7 @@ private fun ChatBubbleItem(
             },
             border = if (isUser) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             tonalElevation = if (isUser) 0.dp else 1.dp,
-            modifier = Modifier.widthIn(max = 330.dp)
+            modifier = Modifier.widthIn(max = 335.dp)
         ) {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -690,16 +809,40 @@ private fun ChatBubbleItem(
                             )
                         }
 
-                        IconButton(
-                            onClick = onCopyClick,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.ContentCopy,
-                                contentDescription = stringResource(R.string.chat_copy_cd),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Offline Native Text-to-Speech (Play / Stop) Button
+                            IconButton(
+                                onClick = onToggleSpeak,
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(38.dp)
+                                    .testTag("tts_button_${message.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
+                                    contentDescription = if (isSpeaking) {
+                                        stringResource(R.string.tts_stop_cd)
+                                    } else {
+                                        stringResource(R.string.tts_play_cd)
+                                    },
+                                    tint = if (isSpeaking) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onCopyClick,
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ContentCopy,
+                                    contentDescription = stringResource(R.string.chat_copy_cd),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 } else if (subject != null) {
@@ -707,6 +850,18 @@ private fun ChatBubbleItem(
                         text = subject.bengaliName,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                    )
+                }
+
+                if (attachedBitmap != null) {
+                    Image(
+                        bitmap = attachedBitmap.asImageBitmap(),
+                        contentDescription = "Uploaded handwritten notebook photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
                     )
                 }
 
@@ -720,11 +875,24 @@ private fun ChatBubbleItem(
                     }
                 )
 
-                if (!isUser && message.latencyMs > 0L) {
+                if (!isUser) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        if (isSpeaking) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "🔊 পড়ে শোনানো হচ্ছে…",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         if (subject != null) {
                             Surface(
                                 color = subject.accentColor.copy(alpha = 0.14f),
@@ -738,11 +906,13 @@ private fun ChatBubbleItem(
                                 )
                             }
                         }
-                        Text(
-                            text = "${message.latencyMs}ms",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (message.latencyMs > 0L) {
+                            Text(
+                                text = "${message.latencyMs}ms",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -761,7 +931,7 @@ private fun StreamingBubbleItem(draft: StreamingDraft) {
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 6.dp),
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, (if (isOnline) OnlineCobalt else SageOffline).copy(alpha = 0.4f)),
-            modifier = Modifier.widthIn(max = 330.dp)
+            modifier = Modifier.widthIn(max = 335.dp)
         ) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -798,73 +968,159 @@ private fun ChatComposerBar(
     value: String,
     onValueChange: (String) -> Unit,
     selectedSubject: WbbseSubject?,
+    pendingPhoto: PendingPhotoAttachment?,
     isGenerating: Boolean,
+    onAttachPhotoClick: () -> Unit,
+    onClearPhoto: () -> Unit,
     onSend: () -> Unit
 ) {
+    val canSend = (value.isNotBlank() || pendingPhoto != null) && !isGenerating
+
     Surface(
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 3.dp,
         shadowElevation = 4.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                placeholder = {
-                    Text(
-                        text = if (selectedSubject != null) {
-                            "${selectedSubject.bengaliName} নিয়ে প্রশ্ন লেখো…"
-                        } else {
-                            stringResource(R.string.chat_input_placeholder)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 4,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { if (!isGenerating) onSend() }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.background,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.background
-                ),
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("chat_input_field")
-            )
+            // Pending Handwritten Notebook Photo Preview Chip
+            if (pendingPhoto != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Image(
+                            bitmap = pendingPhoto.previewBitmap.asImageBitmap(),
+                            contentDescription = "Selected notebook photo preview",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "খাতার ছবি যুক্ত হয়েছে",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "পাঠাও বাটনে চাপ দিলে হাতের লেখা মূল্যায়ন শুরু হবে",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(
+                            onClick = onClearPhoto,
+                            modifier = Modifier.minimumInteractiveComponentSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Remove attached photo",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
 
-            Surface(
-                onClick = onSend,
-                enabled = value.isNotBlank() && !isGenerating,
-                shape = CircleShape,
-                color = if (value.isNotBlank() && !isGenerating) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("chat_send_button")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.Send,
-                        contentDescription = stringResource(R.string.chat_send_cd),
-                        tint = if (value.isNotBlank() && !isGenerating) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.size(22.dp)
-                    )
+                // Camera / Gallery Attachment Button
+                Surface(
+                    onClick = onAttachPhotoClick,
+                    enabled = !isGenerating,
+                    shape = CircleShape,
+                    color = if (pendingPhoto != null) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("chat_attach_photo_button")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.AddAPhoto,
+                            contentDescription = stringResource(R.string.chat_attach_photo_cd),
+                            tint = if (pendingPhoto != null) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    placeholder = {
+                        Text(
+                            text = when {
+                                pendingPhoto != null -> "খাতার ছবি নিয়ে কিছু বলো (ঐচ্ছিক)…"
+                                selectedSubject != null -> "${selectedSubject.bengaliName} নিয়ে প্রশ্ন লেখো…"
+                                else -> stringResource(R.string.chat_input_placeholder)
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.background,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.background
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("chat_input_field")
+                )
+
+                Surface(
+                    onClick = onSend,
+                    enabled = canSend,
+                    shape = CircleShape,
+                    color = if (canSend) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("chat_send_button")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = stringResource(R.string.chat_send_cd),
+                            tint = if (canSend) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
         }

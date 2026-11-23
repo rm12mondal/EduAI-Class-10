@@ -4,11 +4,13 @@ import kotlinx.coroutines.flow.Flow
 
 class StudyRepository(
     private val masterDataDao: MasterDataDao,
-    private val chatMessageDao: ChatMessageDao
+    private val chatMessageDao: ChatMessageDao,
+    private val examAttemptDao: ExamAttemptDao
 ) {
     val allMasterNotes: Flow<List<MasterDataEntity>> = masterDataDao.observeAll()
     val allChatMessages: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAllMessages()
     val chatMessageCount: Flow<Int> = chatMessageDao.observeCount()
+    val allExamAttempts: Flow<List<ExamAttemptEntity>> = examAttemptDao.observeAllAttempts()
 
     suspend fun ensureSeeded() {
         if (masterDataDao.count() == 0) {
@@ -42,5 +44,13 @@ class StudyRepository(
 
     suspend fun clearChatHistory() {
         chatMessageDao.clearAll()
+    }
+
+    suspend fun saveExamAttempt(attempt: ExamAttemptEntity): Long {
+        return examAttemptDao.insertAttempt(attempt)
+    }
+
+    suspend fun clearExamHistory() {
+        examAttemptDao.clearAllAttempts()
     }
 }
