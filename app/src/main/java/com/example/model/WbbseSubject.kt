@@ -90,7 +90,7 @@ enum class WbbseSubject(
         accentColor = SubjectHistoryColor,
         icon = Icons.Rounded.HistoryEdu,
         sampleQuestion = "সাঁওতাল বিদ্রোহ ও নীল বিদ্রোহের প্রধান কারণ কী ছিল?",
-        descriptionBn = "আধুনিক ভারতের ইতিহাস, সংস্কার ও স্বাধীনতা আন্দোলন"
+        descriptionBn = "সম্পূর্ণ ৮টি অধ্যায় ও ইতিহাস ম্যাপ পয়েন্টিং (৪ নম্বর)"
     ),
     GEOGRAPHY(
         id = "geography",
@@ -100,7 +100,7 @@ enum class WbbseSubject(
         accentColor = SubjectGeographyColor,
         icon = Icons.Rounded.Public,
         sampleQuestion = "নদীর ক্ষয়কার্যে সৃষ্ট ভূমিরূপ ও ভারতের মৌসুমি বায়ুর বৈশিষ্ট্য কী?",
-        descriptionBn = "বহির্জাত প্রক্রিয়া, বায়ুমণ্ডল, বারিমণ্ডল ও ভারত"
+        descriptionBn = "সম্পূর্ণ ৬টি অধ্যায় ও ভারতের মানচিত্র চিহ্নিতকরণ (১০ নম্বর)"
     );
 
     companion object {

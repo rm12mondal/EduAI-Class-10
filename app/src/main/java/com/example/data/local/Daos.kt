@@ -8,20 +8,29 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MasterDataDao {
-    @Query("SELECT * FROM wbbse_master_data ORDER BY subjectId ASC, id ASC")
+    @Query("SELECT * FROM wbbse_master_data ORDER BY subjectId ASC, chapterOrder ASC, id ASC")
     fun observeAll(): Flow<List<MasterDataEntity>>
 
-    @Query("SELECT * FROM wbbse_master_data WHERE subjectId = :subjectId ORDER BY id ASC")
+    @Query("SELECT * FROM wbbse_master_data WHERE subjectId = :subjectId ORDER BY chapterOrder ASC, id ASC")
     fun observeBySubject(subjectId: String): Flow<List<MasterDataEntity>>
 
-    @Query("SELECT * FROM wbbse_master_data")
+    @Query("SELECT * FROM wbbse_master_data ORDER BY subjectId ASC, chapterOrder ASC, id ASC")
     suspend fun getAllSnapshot(): List<MasterDataEntity>
 
-    @Query("SELECT * FROM wbbse_master_data WHERE subjectId = :subjectId")
+    @Query("SELECT * FROM wbbse_master_data WHERE subjectId = :subjectId ORDER BY chapterOrder ASC, id ASC")
     suspend fun getBySubjectSnapshot(subjectId: String): List<MasterDataEntity>
 
     @Query("SELECT COUNT(*) FROM wbbse_master_data")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM wbbse_master_data WHERE isUserCreated = 0")
+    suspend fun countBuiltIn(): Int
+
+    @Query("SELECT * FROM wbbse_master_data WHERE isUserCreated = 0 AND isBookmarked = 1")
+    suspend fun getBookmarkedBuiltIn(): List<MasterDataEntity>
+
+    @Query("DELETE FROM wbbse_master_data WHERE isUserCreated = 0")
+    suspend fun deleteAllBuiltIn()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<MasterDataEntity>)

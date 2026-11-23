@@ -3,6 +3,12 @@ package com.example.data.local
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+object TopicImportance {
+    const val VVI = "VVI"
+    const val MEDIUM = "MEDIUM"
+    const val LOW = "LOW"
+}
+
 @Entity(tableName = "wbbse_master_data")
 data class MasterDataEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -14,7 +20,9 @@ data class MasterDataEntity(
     val keyFormulaOrFact: String,
     val examTip: String,
     val isBookmarked: Boolean = false,
-    val isUserCreated: Boolean = false
+    val isUserCreated: Boolean = false,
+    val importanceLevel: String = TopicImportance.VVI,
+    val chapterOrder: Int = 0
 )
 
 @Entity(tableName = "chat_messages")

@@ -11,27 +11,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.Chat
-import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.Bookmark
-import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,7 +36,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -61,11 +54,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.local.MasterDataEntity
+import com.example.data.local.TopicImportance
 import com.example.model.WbbseSubject
-import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
-import androidx.compose.ui.graphics.Brush
 
 @Composable
 fun SubjectsScreen(
@@ -87,24 +79,13 @@ fun SubjectsScreen(
     if (selectedSubject != null) {
         BackHandler { onSelectSubject(null) }
 
-        val subjectNotes = remember(masterNotes, selectedSubject, searchQuery) {
-            masterNotes
-                .filter { it.subjectId == selectedSubject.id }
-                .filter { note ->
-                    if (searchQuery.isBlank()) true
-                    else {
-                        val q = searchQuery.trim().lowercase()
-                        note.chapterName.lowercase().contains(q) ||
-                            note.topicTitle.lowercase().contains(q) ||
-                            note.content.lowercase().contains(q) ||
-                            note.keywords.lowercase().contains(q)
-                    }
-                }
+        val allSubjectNotes = remember(masterNotes, selectedSubject) {
+            masterNotes.filter { it.subjectId == selectedSubject.id }
         }
 
         SubjectDetailView(
             subject = selectedSubject,
-            notes = subjectNotes,
+            allSubjectNotes = allSubjectNotes,
             searchQuery = searchQuery,
             onSearchQueryChange = onSearchQueryChange,
             onBack = { onSelectSubject(null) },
@@ -154,6 +135,10 @@ private fun SubjectsOverviewList(
     onToggleBookmark: (MasterDataEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val totalDistinctChapters = remember(masterNotes) {
+        masterNotes.map { "${it.subjectId}|${it.chapterName}" }.distinct().size
+    }
+
     val searchResults = remember(masterNotes, searchQuery) {
         if (searchQuery.isBlank()) emptyList()
         else {
@@ -189,7 +174,7 @@ private fun SubjectsOverviewList(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = "${stringResource(R.string.subjects_subtitle)} • মোট ${masterNotes.size}টি অফলাইন নোট",
+                        text = "সম্পূর্ণ WBBSE ক্লাস ১০ সিলেবাস • ${totalDistinctChapters}টি অধ্যায় • ${masterNotes.size}টি অফলাইন টপিক",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -294,11 +279,23 @@ private fun SubjectsOverviewList(
                 }
             } else {
                 items(WbbseSubject.entries, key = { it.id }) { subject ->
-                    val count = masterNotes.count { it.subjectId == subject.id }
-                    val bookmarkedCount = masterNotes.count { it.subjectId == subject.id && it.isBookmarked }
+                    val subjectNotes = remember(masterNotes, subject.id) {
+                        masterNotes.filter { it.subjectId == subject.id }
+                    }
+                    val distinctChapterCount = remember(subjectNotes) {
+                        subjectNotes.map { it.chapterName }.distinct().size
+                    }
+                    val vviCount = remember(subjectNotes) {
+                        subjectNotes.count { it.importanceLevel == TopicImportance.VVI }
+                    }
+                    val bookmarkedCount = remember(subjectNotes) {
+                        subjectNotes.count { it.isBookmarked }
+                    }
                     SubjectOverviewCard(
                         subject = subject,
-                        chapterCount = count,
+                        chapterCount = distinctChapterCount,
+                        topicCount = subjectNotes.size,
+                        vviCount = vviCount,
                         bookmarkedCount = bookmarkedCount,
                         onClick = { onOpenSubject(subject) },
                         onSmartLearningClick = { onOpenSmartLearningForSubject(subject) }
@@ -313,6 +310,8 @@ private fun SubjectsOverviewList(
 private fun SubjectOverviewCard(
     subject: WbbseSubject,
     chapterCount: Int,
+    topicCount: Int,
+    vviCount: Int,
     bookmarkedCount: Int,
     onClick: () -> Unit,
     onSmartLearningClick: () -> Unit
@@ -388,8 +387,12 @@ private fun SubjectOverviewCard(
                     )
 
                     Text(
-                        text = "${chapterCount}টি অধ্যায় নোট" + if (bookmarkedCount > 0) " • $bookmarkedCount বুকমার্ক" else "",
+                        text = buildString {
+                            append("${chapterCount}টি অধ্যায় • ${topicCount}টি টপিক • ${vviCount}টি VVI")
+                            if (bookmarkedCount > 0) append(" • $bookmarkedCount বুকমার্ক")
+                        },
                         style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
                         color = subject.accentColor
                     )
                 }
@@ -426,7 +429,7 @@ private fun SubjectOverviewCard(
 @Composable
 private fun SubjectDetailView(
     subject: WbbseSubject,
-    notes: List<MasterDataEntity>,
+    allSubjectNotes: List<MasterDataEntity>,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onBack: () -> Unit,
@@ -438,6 +441,61 @@ private fun SubjectDetailView(
     onOpenAddDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var vviOnly by remember(subject.id) { mutableStateOf(false) }
+
+    val searchFilteredNotes = remember(allSubjectNotes, searchQuery) {
+        if (searchQuery.isBlank()) allSubjectNotes
+        else {
+            val q = searchQuery.trim().lowercase()
+            allSubjectNotes.filter { note ->
+                note.chapterName.lowercase().contains(q) ||
+                    note.topicTitle.lowercase().contains(q) ||
+                    note.content.lowercase().contains(q) ||
+                    note.keywords.lowercase().contains(q)
+            }
+        }
+    }
+
+    val vviCount = remember(searchFilteredNotes) {
+        searchFilteredNotes.count { it.importanceLevel == TopicImportance.VVI }
+    }
+    val mediumCount = remember(searchFilteredNotes) {
+        searchFilteredNotes.count { it.importanceLevel == TopicImportance.MEDIUM }
+    }
+    val lowCount = remember(searchFilteredNotes) {
+        searchFilteredNotes.count { it.importanceLevel == TopicImportance.LOW }
+    }
+
+    val displayedNotes = remember(searchFilteredNotes, vviOnly) {
+        if (vviOnly) searchFilteredNotes.filter { it.importanceLevel == TopicImportance.VVI }
+        else searchFilteredNotes
+    }
+
+    val chapterGroups = remember(displayedNotes) {
+        displayedNotes
+            .groupBy { it.chapterName }
+            .map { (chapterName, items) ->
+                SyllabusChapterGroup(
+                    chapterOrder = items.minOfOrNull { it.chapterOrder } ?: 0,
+                    chapterName = chapterName,
+                    topics = items
+                )
+            }
+            .sortedWith(compareBy<SyllabusChapterGroup> { it.chapterOrder }.thenBy { it.chapterName })
+    }
+
+    val totalDistinctChapters = remember(allSubjectNotes) {
+        allSubjectNotes.map { it.chapterName }.distinct().size
+    }
+
+    var expandedChapters by remember(subject.id) {
+        mutableStateOf(
+            chapterGroups.firstOrNull()?.chapterName?.let { setOf(it) } ?: emptySet()
+        )
+    }
+
+    val allExpanded = chapterGroups.isNotEmpty() && chapterGroups.all { it.chapterName in expandedChapters }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -481,9 +539,10 @@ private fun SubjectDetailView(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = subject.descriptionBn,
+                            text = "মোট ${totalDistinctChapters}টি অধ্যায় • ${allSubjectNotes.size}টি সিলেবাস টপিক",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = subject.accentColor,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -492,7 +551,9 @@ private fun SubjectDetailView(
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("subject_chapters_list"),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
@@ -543,32 +604,78 @@ private fun SubjectDetailView(
                     }
                 }
 
-                item {
+                item(key = "subject_search_field") {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = onSearchQueryChange,
-                        placeholder = { Text("${subject.bengaliName} অধ্যায় খুঁজো…") },
+                        placeholder = { Text("${subject.bengaliName} অধ্যায় বা টপিক খুঁজো…") },
                         leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                         singleLine = true,
                         shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("subject_detail_search_field")
                     )
                 }
 
-                items(notes, key = { it.id }) { note ->
-                    MasterNoteCard(
-                        note = note,
+                item(key = "subject_importance_filter_bar") {
+                    TopicImportanceFilterBar(
+                        vviOnly = vviOnly,
+                        totalTopicCount = searchFilteredNotes.size,
+                        vviTopicCount = vviCount,
+                        mediumTopicCount = mediumCount,
+                        lowTopicCount = lowCount,
+                        allExpanded = allExpanded,
                         accentColor = subject.accentColor,
-                        subjectBadge = null,
-                        onAskTutor = { onAskTutorFromNote(note) },
-                        onOpenSmartLearning = { onOpenSmartLearningForNote(note) },
-                        onToggleBookmark = { onToggleBookmark(note) },
-                        onDeleteCustom = if (note.isUserCreated) {
-                            { onDeleteCustomNote(note.id) }
-                        } else {
-                            null
+                        onSelectVviOnly = { vviOnly = it },
+                        onToggleExpandAll = {
+                            expandedChapters = if (allExpanded) {
+                                emptySet()
+                            } else {
+                                chapterGroups.map { it.chapterName }.toSet()
+                            }
                         }
                     )
+                }
+
+                if (chapterGroups.isEmpty()) {
+                    item(key = "empty_syllabus_results") {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Text(
+                                text = "এই ফিল্টারে কোনো অধ্যায় বা টপিক পাওয়া যায়নি। ‘সব টপিক দেখুন’ বেছে নাও অথবা সার্চ ক্লিয়ার করো।",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                } else {
+                    itemsIndexed(
+                        items = chapterGroups,
+                        key = { _, group -> "${group.chapterOrder}_${group.chapterName}" }
+                    ) { index, group ->
+                        val isExpanded = searchQuery.isNotBlank() || group.chapterName in expandedChapters
+                        ChapterAccordionCard(
+                            chapterIndex = index + 1,
+                            group = group,
+                            isExpanded = isExpanded,
+                            accentColor = subject.accentColor,
+                            onToggleExpand = {
+                                expandedChapters = if (group.chapterName in expandedChapters) {
+                                    expandedChapters - group.chapterName
+                                } else {
+                                    expandedChapters + group.chapterName
+                                }
+                            },
+                            onAskTutorFromNote = onAskTutorFromNote,
+                            onOpenSmartLearningForNote = onOpenSmartLearningForNote,
+                            onToggleBookmark = onToggleBookmark,
+                            onDeleteCustomNote = onDeleteCustomNote
+                        )
+                    }
                 }
             }
         }
@@ -585,221 +692,4 @@ private fun SubjectDetailView(
                 .testTag("add_custom_note_fab")
         )
     }
-}
-
-@Composable
-private fun MasterNoteCard(
-    note: MasterDataEntity,
-    accentColor: Color,
-    subjectBadge: String?,
-    onAskTutor: () -> Unit,
-    onOpenSmartLearning: () -> Unit,
-    onToggleBookmark: () -> Unit,
-    onDeleteCustom: (() -> Unit)?
-) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (subjectBadge != null) {
-                            Surface(
-                                color = accentColor.copy(alpha = 0.14f),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = subjectBadge,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = accentColor,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = note.chapterName,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = accentColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = note.topicTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Row {
-                    if (onDeleteCustom != null) {
-                        IconButton(onClick = onDeleteCustom) {
-                            Icon(
-                                imageVector = Icons.Outlined.Delete,
-                                contentDescription = "Delete custom note",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    IconButton(onClick = onToggleBookmark) {
-                        Icon(
-                            imageVector = if (note.isBookmarked) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
-                            contentDescription = stringResource(R.string.subjects_bookmark_cd),
-                            tint = if (note.isBookmarked) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Text(
-                text = note.content,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Surface(
-                color = accentColor.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = note.keyFormulaOrFact,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(10.dp)
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Lightbulb,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .size(16.dp)
-                )
-                Text(
-                    text = note.examTip,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onOpenSmartLearning,
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .minimumInteractiveComponentSize()
-                        .testTag("chapter_smart_learning_${note.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.School,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("স্মার্ট লার্নিং (সহজ বাংলায় বোঝো)")
-                }
-
-                FilledTonalButton(
-                    onClick = onAskTutor,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .minimumInteractiveComponentSize()
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.Chat,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(stringResource(R.string.subjects_ask_tutor))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AddStudyNoteDialog(
-    subject: WbbseSubject,
-    onDismiss: () -> Unit,
-    onConfirm: (String, String, String, String) -> Unit
-) {
-    var chapter by remember { mutableStateOf("") }
-    var topic by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var formula by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${subject.bengaliName} — নতুন অফলাইন নোট") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = chapter,
-                    onValueChange = { chapter = it },
-                    label = { Text("অধ্যায়ের নাম") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = topic,
-                    onValueChange = { topic = it },
-                    label = { Text("টপিক / শিরোনাম *") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("মূল বিবরণ *") },
-                    minLines = 3,
-                    maxLines = 5,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = formula,
-                    onValueChange = { formula = it },
-                    label = { Text("গুরুত্বপূর্ণ সূত্র / সাল / তথ্য") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(chapter, topic, content, formula) },
-                enabled = topic.isNotBlank() && content.isNotBlank()
-            ) {
-                Text("সংরক্ষণ করো")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("বাতিল")
-            }
-        }
-    )
 }

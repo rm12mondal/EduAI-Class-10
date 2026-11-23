@@ -16,8 +16,24 @@ class StudyRepository(
     val activeTopperMistakes: Flow<List<TopperMistakeEntity>> = topperDao.observeActiveMistakes()
 
     suspend fun ensureSeeded() {
-        if (masterDataDao.count() == 0) {
-            masterDataDao.insertAll(WbbseMasterDataSeed.createInitialRecords())
+        val targetRecords = WbbseMasterDataSeed.createInitialRecords()
+        val existingBuiltInCount = masterDataDao.countBuiltIn()
+        if (existingBuiltInCount != targetRecords.size) {
+            val bookmarkedKeys = masterDataDao.getBookmarkedBuiltIn()
+                .map { "${it.subjectId}|${it.topicTitle}" }
+                .toSet()
+            if (existingBuiltInCount > 0) {
+                masterDataDao.deleteAllBuiltIn()
+            }
+            val merged = if (bookmarkedKeys.isEmpty()) {
+                targetRecords
+            } else {
+                targetRecords.map { item ->
+                    val key = "${item.subjectId}|${item.topicTitle}"
+                    if (key in bookmarkedKeys) item.copy(isBookmarked = true) else item
+                }
+            }
+            masterDataDao.insertAll(merged)
         }
     }
 

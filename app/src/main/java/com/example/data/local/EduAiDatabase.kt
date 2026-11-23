@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TopperSetProgressEntity::class,
         TopperMistakeEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class EduAiDatabase : RoomDatabase() {
@@ -91,6 +91,17 @@ abstract class EduAiDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE wbbse_master_data ADD COLUMN importanceLevel TEXT NOT NULL DEFAULT 'VVI'"
+                )
+                db.execSQL(
+                    "ALTER TABLE wbbse_master_data ADD COLUMN chapterOrder INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun getInstance(context: Context): EduAiDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -98,7 +109,7 @@ abstract class EduAiDatabase : RoomDatabase() {
                     EduAiDatabase::class.java,
                     "eduai_class10_wbbse.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }
