@@ -97,7 +97,25 @@ object NotebookImageHelper {
             }
         }
 
-    fun decodeFileThumbnail(path: String, maxSizePx: Int = 720): Bitmap? {
+    suspend fun persistVisualDiagram(context: Context, bitmap: Bitmap): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val diagramsDir = File(context.filesDir, "ai_diagrams").apply {
+                    if (!exists()) mkdirs()
+                }
+                val outFile = File(diagramsDir, "diagram_${System.currentTimeMillis()}.png")
+                FileOutputStream(outFile).use { fos ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                    fos.flush()
+                }
+                outFile.absolutePath
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to persist AI visual diagram", e)
+                null
+            }
+        }
+
+    fun decodeFileThumbnail(path: String, maxSizePx: Int = 960): Bitmap? {
         return try {
             val file = File(path)
             if (!file.exists()) return null
@@ -112,6 +130,17 @@ object NotebookImageHelper {
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to decode thumbnail $path", e)
+            null
+        }
+    }
+
+    fun decodeFullBitmap(path: String): Bitmap? {
+        return try {
+            val file = File(path)
+            if (!file.exists()) return null
+            BitmapFactory.decodeFile(path)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decode full bitmap $path", e)
             null
         }
     }

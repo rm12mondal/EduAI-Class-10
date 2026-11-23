@@ -11,7 +11,28 @@ import com.example.model.WbbseSubject
  */
 object WbbseExamBank {
 
-    fun getMcqs(subject: WbbseSubject): List<McqQuestion> = when (subject) {
+    val totalQuestionCount: Int by lazy {
+        WbbseSubject.entries.sumOf { subject ->
+            getMcqs(subject).size + getSaqs(subject).size + getLongQuestions(subject).size
+        }
+    }
+
+    fun getMcqs(subject: WbbseSubject): List<McqQuestion> =
+        getBaseMcqs(subject) +
+            WbbseExamBankExtendedPart1.extraMcqs(subject) +
+            WbbseExamBankExtendedPart2.extraMcqs(subject)
+
+    fun getSaqs(subject: WbbseSubject): List<SaqQuestion> =
+        getBaseSaqs(subject) +
+            WbbseExamBankExtendedPart1.extraSaqs(subject) +
+            WbbseExamBankExtendedPart2.extraSaqs(subject)
+
+    fun getLongQuestions(subject: WbbseSubject): List<LongQuestion> =
+        getBaseLongQuestions(subject) +
+            WbbseExamBankExtendedPart1.extraLongs(subject) +
+            WbbseExamBankExtendedPart2.extraLongs(subject)
+
+    private fun getBaseMcqs(subject: WbbseSubject): List<McqQuestion> = when (subject) {
         WbbseSubject.BENGALI -> listOf(
             McqQuestion(
                 id = "bng_mcq_1",
@@ -319,7 +340,7 @@ object WbbseExamBank {
         )
     }
 
-    fun getSaqs(subject: WbbseSubject): List<SaqQuestion> = when (subject) {
+    private fun getBaseSaqs(subject: WbbseSubject): List<SaqQuestion> = when (subject) {
         WbbseSubject.BENGALI -> listOf(
             SaqQuestion(
                 id = "bng_saq_1",
@@ -489,7 +510,7 @@ object WbbseExamBank {
         )
     }
 
-    fun getLongQuestions(subject: WbbseSubject): List<LongQuestion> = when (subject) {
+    private fun getBaseLongQuestions(subject: WbbseSubject): List<LongQuestion> = when (subject) {
         WbbseSubject.BENGALI -> listOf(
             LongQuestion(
                 id = "bng_long_1",

@@ -25,8 +25,10 @@ import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -34,6 +36,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +63,9 @@ import com.example.R
 import com.example.data.local.MasterDataEntity
 import com.example.model.WbbseSubject
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.OnlineCobalt
+import com.example.ui.theme.SageOffline
+import androidx.compose.ui.graphics.Brush
 
 @Composable
 fun SubjectsScreen(
@@ -69,6 +75,8 @@ fun SubjectsScreen(
     onSearchQueryChange: (String) -> Unit,
     onSelectSubject: (WbbseSubject?) -> Unit,
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
+    onOpenSmartLearningForSubject: (WbbseSubject?) -> Unit,
+    onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onAddCustomNote: (WbbseSubject, String, String, String, String) -> Unit,
     onDeleteCustomNote: (Long) -> Unit,
@@ -101,6 +109,8 @@ fun SubjectsScreen(
             onSearchQueryChange = onSearchQueryChange,
             onBack = { onSelectSubject(null) },
             onAskTutorFromNote = onAskTutorFromNote,
+            onOpenSmartLearningForSubject = { onOpenSmartLearningForSubject(selectedSubject) },
+            onOpenSmartLearningForNote = onOpenSmartLearningForNote,
             onToggleBookmark = onToggleBookmark,
             onDeleteCustomNote = onDeleteCustomNote,
             onOpenAddDialog = { showAddNoteDialog = true },
@@ -124,6 +134,8 @@ fun SubjectsScreen(
             onSearchQueryChange = onSearchQueryChange,
             onOpenSubject = onSelectSubject,
             onAskTutorFromNote = onAskTutorFromNote,
+            onOpenSmartLearningForSubject = onOpenSmartLearningForSubject,
+            onOpenSmartLearningForNote = onOpenSmartLearningForNote,
             onToggleBookmark = onToggleBookmark,
             modifier = modifier
         )
@@ -137,6 +149,8 @@ private fun SubjectsOverviewList(
     onSearchQueryChange: (String) -> Unit,
     onOpenSubject: (WbbseSubject) -> Unit,
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
+    onOpenSmartLearningForSubject: (WbbseSubject?) -> Unit,
+    onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -182,6 +196,66 @@ private fun SubjectsOverviewList(
                 }
             }
 
+            // Flagship Smart Learning Launcher Banner on Subjects Overview
+            item(key = "subjects_smart_learning_banner") {
+                Card(
+                    onClick = { onOpenSmartLearningForSubject(null) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    border = BorderStroke(1.2.dp, OnlineCobalt.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("subjects_smart_learning_banner")
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        OnlineCobalt.copy(alpha = 0.16f),
+                                        SageOffline.copy(alpha = 0.14f)
+                                    )
+                                )
+                            )
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                color = OnlineCobalt,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.School,
+                                        contentDescription = "Smart Learning",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.smart_learning_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "সহজ বাংলায় AI টিউটর • বইয়ের ছবি দিয়ে সমাধান • ২ডি ডায়াগ্রাম • ২-মিনিট কুইজ ও মেমোরাইজার",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 OutlinedTextField(
                     value = searchQuery,
@@ -213,6 +287,7 @@ private fun SubjectsOverviewList(
                         accentColor = subj.accentColor,
                         subjectBadge = subj.bengaliName,
                         onAskTutor = { onAskTutorFromNote(note) },
+                        onOpenSmartLearning = { onOpenSmartLearningForNote(note) },
                         onToggleBookmark = { onToggleBookmark(note) },
                         onDeleteCustom = null
                     )
@@ -225,7 +300,8 @@ private fun SubjectsOverviewList(
                         subject = subject,
                         chapterCount = count,
                         bookmarkedCount = bookmarkedCount,
-                        onClick = { onOpenSubject(subject) }
+                        onClick = { onOpenSubject(subject) },
+                        onSmartLearningClick = { onOpenSmartLearningForSubject(subject) }
                     )
                 }
             }
@@ -238,7 +314,8 @@ private fun SubjectOverviewCard(
     subject: WbbseSubject,
     chapterCount: Int,
     bookmarkedCount: Int,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onSmartLearningClick: () -> Unit
 ) {
     Card(
         onClick = onClick,
@@ -250,66 +327,96 @@ private fun SubjectOverviewCard(
             .fillMaxWidth()
             .testTag("subject_card_${subject.id}")
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(subject.accentColor.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(
-                    imageVector = subject.icon,
-                    contentDescription = subject.englishName,
-                    tint = subject.accentColor,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(subject.accentColor.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = subject.bengaliName,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
+                    Icon(
+                        imageVector = subject.icon,
+                        contentDescription = subject.englishName,
+                        tint = subject.accentColor,
+                        modifier = Modifier.size(28.dp)
                     )
-                    Surface(
-                        color = subject.accentColor.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = subject.shortCode,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = subject.accentColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
                 }
 
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = subject.bengaliName,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            color = subject.accentColor.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = subject.shortCode,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = subject.accentColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = subject.descriptionBn,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Text(
+                        text = "${chapterCount}টি অধ্যায় নোট" + if (bookmarkedCount > 0) " • $bookmarkedCount বুকমার্ক" else "",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = subject.accentColor
+                    )
+                }
+            }
+
+            // Direct Smart Learning entry inside EVERY WBBSE Subject Card
+            FilledTonalButton(
+                onClick = onSmartLearningClick,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = subject.accentColor.copy(alpha = 0.12f),
+                    contentColor = subject.accentColor
+                ),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .minimumInteractiveComponentSize()
+                    .testTag("subject_smart_learning_${subject.id}")
+            ) {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = subject.descriptionBn,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "${subject.bengaliName} — স্মার্ট লার্নিং (সহজ বাংলায় পড়া বোঝো)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    text = "${chapterCount}টি অধ্যায় নোট" + if (bookmarkedCount > 0) " • $bookmarkedCount বুকমার্ক" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = subject.accentColor
                 )
             }
         }
@@ -324,6 +431,8 @@ private fun SubjectDetailView(
     onSearchQueryChange: (String) -> Unit,
     onBack: () -> Unit,
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
+    onOpenSmartLearningForSubject: () -> Unit,
+    onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onDeleteCustomNote: (Long) -> Unit,
     onOpenAddDialog: () -> Unit,
@@ -392,6 +501,48 @@ private fun SubjectDetailView(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Dedicated Smart Learning Banner inside Subject Detail
+                item(key = "subject_detail_smart_learning_banner") {
+                    Card(
+                        onClick = onOpenSmartLearningForSubject,
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = subject.accentColor.copy(alpha = 0.12f)),
+                        border = BorderStroke(1.2.dp, subject.accentColor.copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("subject_detail_smart_learning_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                color = subject.accentColor,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.size(42.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.School, contentDescription = null, tint = Color.White)
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${subject.bengaliName} — স্মার্ট লার্নিং AI টিউটর",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = subject.accentColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "যেকোনো অধ্যায় সহজ বাংলায় গল্পের মতো বোঝো, বইয়ের ছবি দাও বা ২ডি ডায়াগ্রাম তৈরি করো।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item {
                     OutlinedTextField(
                         value = searchQuery,
@@ -410,6 +561,7 @@ private fun SubjectDetailView(
                         accentColor = subject.accentColor,
                         subjectBadge = null,
                         onAskTutor = { onAskTutorFromNote(note) },
+                        onOpenSmartLearning = { onOpenSmartLearningForNote(note) },
                         onToggleBookmark = { onToggleBookmark(note) },
                         onDeleteCustom = if (note.isUserCreated) {
                             { onDeleteCustomNote(note.id) }
@@ -441,6 +593,7 @@ private fun MasterNoteCard(
     accentColor: Color,
     subjectBadge: String?,
     onAskTutor: () -> Unit,
+    onOpenSmartLearning: () -> Unit,
     onToggleBookmark: () -> Unit,
     onDeleteCustom: (() -> Unit)?
 ) {
@@ -549,21 +702,40 @@ private fun MasterNoteCard(
                 )
             }
 
-            Button(
-                onClick = onAskTutor,
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .minimumInteractiveComponentSize()
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.Chat,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.subjects_ask_tutor))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onOpenSmartLearning,
+                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .testTag("chapter_smart_learning_${note.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.School,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("স্মার্ট লার্নিং (সহজ বাংলায় বোঝো)")
+                }
+
+                FilledTonalButton(
+                    onClick = onAskTutor,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.Chat,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(stringResource(R.string.subjects_ask_tutor))
+                }
             }
         }
     }

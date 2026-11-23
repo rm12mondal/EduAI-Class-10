@@ -5,12 +5,15 @@ import kotlinx.coroutines.flow.Flow
 class StudyRepository(
     private val masterDataDao: MasterDataDao,
     private val chatMessageDao: ChatMessageDao,
-    private val examAttemptDao: ExamAttemptDao
+    private val examAttemptDao: ExamAttemptDao,
+    private val topperDao: TopperDao
 ) {
     val allMasterNotes: Flow<List<MasterDataEntity>> = masterDataDao.observeAll()
     val allChatMessages: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAllMessages()
     val chatMessageCount: Flow<Int> = chatMessageDao.observeCount()
     val allExamAttempts: Flow<List<ExamAttemptEntity>> = examAttemptDao.observeAllAttempts()
+    val allTopperSetProgress: Flow<List<TopperSetProgressEntity>> = topperDao.observeAllSetProgress()
+    val activeTopperMistakes: Flow<List<TopperMistakeEntity>> = topperDao.observeActiveMistakes()
 
     suspend fun ensureSeeded() {
         if (masterDataDao.count() == 0) {
@@ -52,5 +55,38 @@ class StudyRepository(
 
     suspend fun clearExamHistory() {
         examAttemptDao.clearAllAttempts()
+    }
+
+    suspend fun getTopperTrackProgress(trackId: String): List<TopperSetProgressEntity> {
+        return topperDao.getProgressForTrack(trackId)
+    }
+
+    suspend fun saveTopperSetProgress(progress: TopperSetProgressEntity): Long {
+        return topperDao.insertSetProgress(progress)
+    }
+
+    suspend fun getActiveMistakesForTrack(trackId: String?): List<TopperMistakeEntity> {
+        return if (trackId == null) {
+            topperDao.getAllActiveMistakes()
+        } else {
+            topperDao.getActiveMistakesForTrack(trackId)
+        }
+    }
+
+    suspend fun saveTopperMistakes(mistakes: List<TopperMistakeEntity>) {
+        if (mistakes.isNotEmpty()) {
+            topperDao.insertMistakes(mistakes)
+        }
+    }
+
+    suspend fun resolveTopperMistakes(questionIds: List<String>) {
+        if (questionIds.isNotEmpty()) {
+            topperDao.markMistakesResolved(questionIds)
+        }
+    }
+
+    suspend fun clearTopperProgress() {
+        topperDao.clearSetProgress()
+        topperDao.clearMistakes()
     }
 }

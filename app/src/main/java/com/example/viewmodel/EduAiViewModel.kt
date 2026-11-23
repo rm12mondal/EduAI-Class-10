@@ -9,7 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.NetworkMonitor
 import com.example.data.ai.AiRepository
 import com.example.data.ai.AiStreamEvent
+import com.example.data.ai.ExamIntentRouter
 import com.example.data.ai.HybridEduAiRepository
+import com.example.data.ai.SmartLearningService
 import com.example.data.gguf.GgufManagerState
 import com.example.data.gguf.GgufModelManager
 import com.example.data.local.ChatMessageEntity
@@ -22,18 +24,29 @@ import com.example.data.local.StudyRepository
 import com.example.data.media.NotebookImageHelper
 import com.example.data.speech.EduTtsManager
 import com.example.data.speech.TtsUiState
+import com.example.model.ActiveExamSession
 import com.example.model.AppTab
+import com.example.model.ChatPromptOptions
+import com.example.model.ExamChatIntent
+import com.example.model.ExamChatMessage
 import com.example.model.ExamFormat
+import com.example.model.ExamSessionMode
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
 import com.example.model.OverallProgressStats
+import com.example.model.SmartLearningMessage
+import com.example.model.SmartLearningUiState
 import com.example.model.SubjectProgressSummary
 import com.example.model.SubjectiveEvaluationResult
+import com.example.model.TimingBucket
+import com.example.model.TopperSectionType
+import com.example.model.TopperSubjectTrack
 import com.example.model.TtsVoiceSettings
 import com.example.model.WbbseSubject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,12 +61,25 @@ data class StreamingDraft(
     val text: String,
     val sourceLabel: String,
     val mode: InferenceMode,
-    val subject: WbbseSubject?
+    val subject: WbbseSubject?,
+    val isGeneratingDiagram: Boolean = false
 )
 
 data class PendingPhotoAttachment(
     val uri: Uri,
     val previewBitmap: Bitmap
+)
+
+data class ExamChatUiState(
+    val messages: List<ExamChatMessage> = emptyList(),
+    val streamingDraft: StreamingDraft? = null,
+    val isGenerating: Boolean = false,
+    val pendingPhoto: PendingPhotoAttachment? = null,
+    val smartToThePointMode: Boolean = true,
+    val visualDiagramMode: Boolean = false,
+    val translateMode: Boolean = false,
+    val targetMarks: Int? = null,
+    val activeSession: ActiveExamSession? = null
 )
 
 data class EduAiUiState(
@@ -70,6 +96,10 @@ data class EduAiUiState(
     val isGenerating: Boolean = false,
     val streamingDraft: StreamingDraft? = null,
     val pendingChatPhoto: PendingPhotoAttachment? = null,
+    val chatSmartToThePoint: Boolean = false,
+    val chatVisualMode: Boolean = false,
+    val chatTranslateMode: Boolean = false,
+    val chatTargetMarks: Int? = null,
     val ttsState: TtsUiState = TtsUiState(),
     val ttsVoiceSettings: TtsVoiceSettings = TtsVoiceSettings(),
     val examAttempts: List<ExamAttemptEntity> = emptyList(),
@@ -79,6 +109,7 @@ data class EduAiUiState(
     val isEvaluatingExam: Boolean = false,
     val latestSubjectiveEvaluation: SubjectiveEvaluationResult? = null,
     val pendingExamPhoto: PendingPhotoAttachment? = null,
+    val examChat: ExamChatUiState = ExamChatUiState(),
     val errorMessage: String? = null
 )
 
@@ -90,11 +121,16 @@ private data class LocalUiNavigationState(
     val isGenerating: Boolean = false,
     val streamingDraft: StreamingDraft? = null,
     val pendingChatPhoto: PendingPhotoAttachment? = null,
+    val chatSmartToThePoint: Boolean = false,
+    val chatVisualMode: Boolean = false,
+    val chatTranslateMode: Boolean = false,
+    val chatTargetMarks: Int? = null,
     val selectedExamSubject: WbbseSubject = WbbseSubject.PHYSICAL_SCIENCE,
     val selectedExamFormat: ExamFormat = ExamFormat.MCQ,
     val isEvaluatingExam: Boolean = false,
     val latestSubjectiveEvaluation: SubjectiveEvaluationResult? = null,
     val pendingExamPhoto: PendingPhotoAttachment? = null,
+    val examChat: ExamChatUiState = ExamChatUiState(),
     val errorMessage: String? = null
 )
 
@@ -105,7 +141,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     private val studyRepository = StudyRepository(
         masterDataDao = database.masterDataDao(),
         chatMessageDao = database.chatMessageDao(),
-        examAttemptDao = database.examAttemptDao()
+        examAttemptDao = database.examAttemptDao(),
+        topperDao = database.topperDao()
     )
     private val settingsDataStore = SettingsDataStore(application)
     private val ggufModelManager = GgufModelManager(application)
@@ -116,8 +153,35 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         ggufModelManager = ggufModelManager
     )
 
+    private val topperController = TopperController(
+        appContext = appContext,
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        ggufModelManager = ggufModelManager
+    )
+
+    val topperState: StateFlow<TopperUiState> = topperController.uiState
+
+    private val smartLearningService = SmartLearningService(
+        studyRepository = studyRepository,
+        ggufModelManager = ggufModelManager
+    )
+
+    private val smartLearningController = SmartLearningController(
+        appContext = appContext,
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        aiRepository = aiRepository,
+        smartLearningService = smartLearningService
+    )
+
+    val smartLearningState: StateFlow<SmartLearningUiState> = smartLearningController.uiState
+
     private val localState = MutableStateFlow(LocalUiNavigationState())
     private var generationJob: Job? = null
+    private var examChatJob: Job? = null
+    private var examHallTimerJob: Job? = null
+    private var nextExamChatMsgId: Long = 10_000L
 
     private val coreDataFlow = combine(
         settingsDataStore.settingsFlow,
@@ -155,6 +219,10 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             isGenerating = nav.isGenerating,
             streamingDraft = nav.streamingDraft,
             pendingChatPhoto = nav.pendingChatPhoto,
+            chatSmartToThePoint = nav.chatSmartToThePoint,
+            chatVisualMode = nav.chatVisualMode,
+            chatTranslateMode = nav.chatTranslateMode,
+            chatTargetMarks = nav.chatTargetMarks,
             ttsState = extra.tts,
             ttsVoiceSettings = data.settings.ttsSettings,
             examAttempts = extra.attempts,
@@ -164,6 +232,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             isEvaluatingExam = nav.isEvaluatingExam,
             latestSubjectiveEvaluation = nav.latestSubjectiveEvaluation,
             pendingExamPhoto = nav.pendingExamPhoto,
+            examChat = nav.examChat,
             errorMessage = nav.errorMessage
         )
     }.stateIn(
@@ -187,6 +256,9 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        examHallTimerJob?.cancel()
+        topperController.stopTimer()
+        smartLearningController.stopAll()
         ttsManager.shutdown()
         super.onCleared()
     }
@@ -215,6 +287,24 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settingsDataStore.setInferenceMode(target)
         }
+    }
+
+    // ==================== Main Chat Smart / Visual / Translate Toggles ====================
+
+    fun toggleChatSmartToThePoint() {
+        localState.update { it.copy(chatSmartToThePoint = !it.chatSmartToThePoint) }
+    }
+
+    fun toggleChatVisualMode() {
+        localState.update { it.copy(chatVisualMode = !it.chatVisualMode) }
+    }
+
+    fun toggleChatTranslateMode() {
+        localState.update { it.copy(chatTranslateMode = !it.chatTranslateMode) }
+    }
+
+    fun setChatTargetMarks(marks: Int?) {
+        localState.update { it.copy(chatTargetMarks = marks) }
     }
 
     // ==================== Text-to-Speech ====================
@@ -279,7 +369,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         localState.update { it.copy(pendingChatPhoto = null) }
     }
 
-    // ==================== Chat Sending (Text + Multimodal Notebook Photo) ====================
+    // ==================== Main Chat Sending (Text + Photo + Smart Answer + AI Visual Diagram) ====================
 
     fun sendQuestion(rawQuestion: String, explicitSubject: WbbseSubject? = null) {
         val pendingPhoto = localState.value.pendingChatPhoto
@@ -294,6 +384,14 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         val activeSubject = explicitSubject ?: snapshot.selectedChatSubject
         val activeMode = snapshot.inferenceMode
         val config = snapshot.llamaConfig
+        val options = ChatPromptOptions(
+            smartToThePoint = snapshot.chatSmartToThePoint,
+            visualDiagramRequested = snapshot.chatVisualMode,
+            translateMode = snapshot.chatTranslateMode,
+            targetMarks = snapshot.chatTargetMarks
+        )
+        val analysis = ExamIntentRouter.analyzeForMainChat(effectiveQuery, activeSubject, options)
+        val shouldGenerateDiagram = analysis.effectiveVisualDiagram && activeMode == InferenceMode.ONLINE
 
         ttsManager.stop()
         generationJob?.cancel()
@@ -310,10 +408,13 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
                         sourceLabel = when {
                             activeMode == InferenceMode.OFFLINE -> "অফলাইন WBBSE ও Llama ইঞ্জিন…"
                             pendingPhoto != null -> "খাতার ছবি মূল্যায়ন হচ্ছে (Gemini)…"
+                            shouldGenerateDiagram -> "🎨 AI ভিজ্যুয়াল ব্যাখ্যা ও ডায়াগ্রাম তৈরি হচ্ছে…"
+                            analysis.effectiveSmartAnswer -> "🎯 টু-দ্য-পয়েন্ট বোর্ড উত্তর তৈরি হচ্ছে…"
                             else -> "অনলাইন Gemini (gemini-3.8-flash)…"
                         },
                         mode = activeMode,
-                        subject = activeSubject
+                        subject = activeSubject,
+                        isGeneratingDiagram = shouldGenerateDiagram
                     )
                 )
             }
@@ -334,12 +435,15 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
 
+                var completedEvent: AiStreamEvent.Completed? = null
+
                 aiRepository.generateAnswerStream(
                     query = effectiveQuery,
                     selectedSubject = activeSubject,
                     mode = activeMode,
                     config = config,
-                    imageBitmap = pendingPhoto?.previewBitmap
+                    imageBitmap = pendingPhoto?.previewBitmap,
+                    options = options
                 ).collect { event ->
                     when (event) {
                         is AiStreamEvent.Partial -> {
@@ -349,31 +453,68 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
                                         text = event.accumulatedText,
                                         sourceLabel = event.sourceLabel,
                                         mode = activeMode,
-                                        subject = activeSubject
+                                        subject = activeSubject,
+                                        isGeneratingDiagram = shouldGenerateDiagram
                                     )
                                 )
                             }
                         }
 
                         is AiStreamEvent.Completed -> {
-                            studyRepository.saveChatMessage(
-                                ChatMessageEntity(
-                                    role = "assistant",
-                                    content = event.fullText,
-                                    subjectId = event.resolvedSubject?.id,
-                                    mode = activeMode.storageValue,
-                                    sourceLabel = event.sourceLabel,
-                                    latencyMs = event.latencyMs
-                                )
-                            )
-                            localState.update { state ->
-                                state.copy(
-                                    isGenerating = false,
-                                    streamingDraft = null
-                                )
-                            }
+                            completedEvent = event
                         }
                     }
+                }
+
+                val finalEvent = completedEvent ?: throw IllegalStateException("উত্তর পাওয়া যায়নি।")
+                var diagramPath: String? = null
+                var finalContent = finalEvent.fullText
+                var finalSourceLabel = finalEvent.sourceLabel
+
+                if (shouldGenerateDiagram) {
+                    localState.update { state ->
+                        state.copy(
+                            streamingDraft = StreamingDraft(
+                                text = finalContent,
+                                sourceLabel = "🎨 লেবেলযুক্ত ২ডি ডায়াগ্রাম আঁকা হচ্ছে (Gemini Nano Banana 2.1)…",
+                                mode = activeMode,
+                                subject = finalEvent.resolvedSubject ?: activeSubject,
+                                isGeneratingDiagram = true
+                            )
+                        )
+                    }
+                    try {
+                        val diagramBitmap = aiRepository.generateVisualDiagram(
+                            conceptQuery = effectiveQuery,
+                            subject = finalEvent.resolvedSubject ?: activeSubject,
+                            mode = activeMode
+                        )
+                        diagramPath = NotebookImageHelper.persistVisualDiagram(appContext, diagramBitmap)
+                        finalSourceLabel = "🎨 AI ভিজ্যুয়াল ডায়াগ্রাম • Gemini"
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("EduAiViewModel", "AI Visual Diagram failed", e)
+                        finalContent += "\n\n⚠️ ডায়াগ্রাম জেনারেশন ত্রুটি: ${e.localizedMessage ?: "ছবি তৈরি করা যায়নি।"}"
+                    }
+                }
+
+                studyRepository.saveChatMessage(
+                    ChatMessageEntity(
+                        role = "assistant",
+                        content = finalContent,
+                        subjectId = finalEvent.resolvedSubject?.id,
+                        mode = activeMode.storageValue,
+                        sourceLabel = finalSourceLabel,
+                        latencyMs = finalEvent.latencyMs,
+                        imagePath = diagramPath
+                    )
+                )
+                localState.update { state ->
+                    state.copy(
+                        isGenerating = false,
+                        streamingDraft = null
+                    )
                 }
             } catch (e: TimeoutCancellationException) {
                 Log.e("EduAiViewModel", "Online AI response timed out", e)
@@ -428,7 +569,477 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ==================== Exam & Score Tracker ====================
+    // ==================== 3-in-1 Smart Exam Chat Box (Intent A / B / C + Timer + Camera + Visual) ====================
+
+    fun toggleExamSmartMode() {
+        localState.update {
+            it.copy(examChat = it.examChat.copy(smartToThePointMode = !it.examChat.smartToThePointMode))
+        }
+    }
+
+    fun toggleExamVisualMode() {
+        localState.update {
+            it.copy(examChat = it.examChat.copy(visualDiagramMode = !it.examChat.visualDiagramMode))
+        }
+    }
+
+    fun toggleExamTranslateMode() {
+        localState.update {
+            it.copy(examChat = it.examChat.copy(translateMode = !it.examChat.translateMode))
+        }
+    }
+
+    fun setExamTargetMarks(marks: Int?) {
+        localState.update {
+            it.copy(examChat = it.examChat.copy(targetMarks = marks))
+        }
+    }
+
+    fun attachExamChatPhotoUri(uri: Uri) {
+        viewModelScope.launch {
+            val bitmap = NotebookImageHelper.loadScaledBitmap(appContext, uri)
+            if (bitmap != null) {
+                localState.update {
+                    it.copy(
+                        examChat = it.examChat.copy(
+                            pendingPhoto = PendingPhotoAttachment(uri = uri, previewBitmap = bitmap)
+                        )
+                    )
+                }
+            } else {
+                localState.update {
+                    it.copy(errorMessage = "খাতার ছবি লোড করা যায়নি। আবার চেষ্টা করো।")
+                }
+            }
+        }
+    }
+
+    fun clearPendingExamChatPhoto() {
+        localState.update {
+            it.copy(examChat = it.examChat.copy(pendingPhoto = null))
+        }
+    }
+
+    fun toggleExamSessionPause() {
+        localState.update { state ->
+            val session = state.examChat.activeSession ?: return@update state
+            state.copy(
+                examChat = state.examChat.copy(
+                    activeSession = session.copy(isPaused = !session.isPaused)
+                )
+            )
+        }
+    }
+
+    fun endExamSession() {
+        examHallTimerJob?.cancel()
+        localState.update { state ->
+            state.copy(examChat = state.examChat.copy(activeSession = null))
+        }
+    }
+
+    fun clearExamChat() {
+        ttsManager.stop()
+        examChatJob?.cancel()
+        examHallTimerJob?.cancel()
+        localState.update { state ->
+            state.copy(
+                examChat = state.examChat.copy(
+                    messages = emptyList(),
+                    streamingDraft = null,
+                    isGenerating = false,
+                    pendingPhoto = null,
+                    activeSession = null
+                )
+            )
+        }
+    }
+
+    fun sendExamChatMessage(rawText: String) {
+        val currentExamChat = localState.value.examChat
+        val pendingPhoto = currentExamChat.pendingPhoto
+        val trimmed = rawText.trim()
+        if ((trimmed.isEmpty() && pendingPhoto == null) || currentExamChat.isGenerating) return
+
+        val effectiveQuery = trimmed.ifBlank {
+            val m = currentExamChat.targetMarks ?: 5
+            "আমার হাতের লেখা এই ${m} নম্বরের উত্তরটি WBBSE মাধ্যমিক মান অনুযায়ী মূল্যায়ন করো, কতটুকু ঠিক/ভুল হয়েছে বলো এবং সঠিক নম্বর দাও।"
+        }
+
+        val snapshot = uiState.value
+        val activeMode = snapshot.inferenceMode
+        val options = ChatPromptOptions(
+            smartToThePoint = currentExamChat.smartToThePointMode,
+            visualDiagramRequested = currentExamChat.visualDiagramMode,
+            translateMode = currentExamChat.translateMode,
+            targetMarks = currentExamChat.targetMarks
+        )
+        val analysis = ExamIntentRouter.analyzeForExamChat(
+            query = effectiveQuery,
+            selectedSubject = snapshot.selectedExamSubject,
+            hasPhotoAttachment = pendingPhoto != null,
+            activeSession = currentExamChat.activeSession,
+            options = options
+        )
+        val resolvedSubject = analysis.detectedSubject ?: snapshot.selectedExamSubject
+        val shouldGenerateDiagram = analysis.effectiveVisualDiagram && activeMode == InferenceMode.ONLINE
+
+        // Activate or update Normal Test / Madhyamik Exam Hall session if triggered
+        val isStartingNewNormal = analysis.intent == ExamChatIntent.NORMAL_TEST &&
+            (currentExamChat.activeSession == null || currentExamChat.activeSession.mode != ExamSessionMode.NORMAL_UNTIMED ||
+                effectiveQuery.contains("টেস্ট") || effectiveQuery.lowercase().contains("test"))
+        val isStartingNewMadhyamik = analysis.intent == ExamChatIntent.MADHYAMIK_TEST &&
+            (currentExamChat.activeSession == null || currentExamChat.activeSession.mode != ExamSessionMode.MADHYAMIK_TIMED ||
+                effectiveQuery.contains("মাধ্যমিক") || effectiveQuery.lowercase().contains("madhyamik") ||
+                effectiveQuery.lowercase().contains("previous year") || effectiveQuery.contains("বিগত"))
+
+        if (isStartingNewNormal) {
+            examHallTimerJob?.cancel()
+            val session = ActiveExamSession(
+                mode = ExamSessionMode.NORMAL_UNTIMED,
+                subject = resolvedSubject,
+                title = "নরমাল টেস্ট — ${resolvedSubject.bengaliName}",
+                chapterHint = analysis.chapterHint,
+                pageHint = analysis.pageHint,
+                fullMarks = 15,
+                totalDurationSeconds = 0L,
+                remainingSeconds = 0L
+            )
+            localState.update { it.copy(examChat = it.examChat.copy(activeSession = session)) }
+        } else if (isStartingNewMadhyamik) {
+            val totalSeconds = analysis.recommendedMadhyamikDurationMinutes * 60L
+            val session = ActiveExamSession(
+                mode = ExamSessionMode.MADHYAMIK_TIMED,
+                subject = resolvedSubject,
+                title = "মাধ্যমিক পরীক্ষা হল — ${resolvedSubject.bengaliName}",
+                chapterHint = analysis.chapterHint,
+                pageHint = analysis.pageHint,
+                fullMarks = if (analysis.recommendedMadhyamikDurationMinutes >= 180) 90 else 40,
+                totalDurationSeconds = totalSeconds,
+                remainingSeconds = totalSeconds,
+                isPaused = false,
+                isTimeUp = false
+            )
+            startExamHallCountdown(session)
+        }
+
+        ttsManager.stop()
+        examChatJob?.cancel()
+        examChatJob = viewModelScope.launch {
+            val savedPhotoPath = pendingPhoto?.let {
+                NotebookImageHelper.persistThumbnail(appContext, it.previewBitmap)
+            }
+
+            val userMsg = ExamChatMessage(
+                id = ++nextExamChatMsgId,
+                role = "user",
+                content = effectiveQuery,
+                intent = analysis.intent,
+                subject = resolvedSubject,
+                mode = activeMode,
+                sourceLabel = analysis.intent.badgeBn,
+                userPhotoPath = savedPhotoPath
+            )
+
+            localState.update { state ->
+                state.copy(
+                    errorMessage = null,
+                    examChat = state.examChat.copy(
+                        messages = state.examChat.messages + userMsg,
+                        pendingPhoto = null,
+                        isGenerating = true,
+                        streamingDraft = StreamingDraft(
+                            text = "",
+                            sourceLabel = "${analysis.intent.badgeBn} তৈরি হচ্ছে…",
+                            mode = activeMode,
+                            subject = resolvedSubject,
+                            isGeneratingDiagram = shouldGenerateDiagram
+                        )
+                    )
+                )
+            }
+
+            try {
+                var completedEvent: AiStreamEvent.Completed? = null
+
+                aiRepository.generateExamAssistantStream(
+                    query = effectiveQuery,
+                    analysis = analysis,
+                    activeSession = localState.value.examChat.activeSession,
+                    mode = activeMode,
+                    config = snapshot.llamaConfig,
+                    handwrittenImage = pendingPhoto?.previewBitmap
+                ).collect { event ->
+                    when (event) {
+                        is AiStreamEvent.Partial -> {
+                            localState.update { state ->
+                                state.copy(
+                                    examChat = state.examChat.copy(
+                                        streamingDraft = StreamingDraft(
+                                            text = event.accumulatedText,
+                                            sourceLabel = event.sourceLabel,
+                                            mode = activeMode,
+                                            subject = resolvedSubject,
+                                            isGeneratingDiagram = shouldGenerateDiagram
+                                        )
+                                    )
+                                )
+                            }
+                        }
+
+                        is AiStreamEvent.Completed -> completedEvent = event
+                    }
+                }
+
+                val finalEvent = completedEvent ?: throw IllegalStateException("উত্তর পাওয়া যায়নি।")
+                var diagramPath: String? = null
+                var diagramErr: String? = null
+
+                if (shouldGenerateDiagram) {
+                    localState.update { state ->
+                        state.copy(
+                            examChat = state.examChat.copy(
+                                streamingDraft = StreamingDraft(
+                                    text = finalEvent.fullText,
+                                    sourceLabel = "🎨 লেবেলযুক্ত ২ডি ডায়াগ্রাম আঁকা হচ্ছে (Gemini Nano Banana 2.1)…",
+                                    mode = activeMode,
+                                    subject = finalEvent.resolvedSubject ?: resolvedSubject,
+                                    isGeneratingDiagram = true
+                                )
+                            )
+                        )
+                    }
+                    try {
+                        val bmp = aiRepository.generateVisualDiagram(
+                            conceptQuery = effectiveQuery,
+                            subject = finalEvent.resolvedSubject ?: resolvedSubject,
+                            mode = activeMode
+                        )
+                        diagramPath = NotebookImageHelper.persistVisualDiagram(appContext, bmp)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("EduAiViewModel", "Exam Chat Visual Diagram failed", e)
+                        diagramErr = e.localizedMessage ?: "ভিজ্যুয়াল ডায়াগ্রাম তৈরি করা যায়নি।"
+                    }
+                }
+
+                val assistantMsg = ExamChatMessage(
+                    id = ++nextExamChatMsgId,
+                    role = "assistant",
+                    content = finalEvent.fullText,
+                    intent = analysis.intent,
+                    subject = finalEvent.resolvedSubject ?: resolvedSubject,
+                    mode = activeMode,
+                    sourceLabel = finalEvent.sourceLabel,
+                    generatedDiagramPath = diagramPath,
+                    diagramError = diagramErr,
+                    latencyMs = finalEvent.latencyMs
+                )
+
+                localState.update { state ->
+                    state.copy(
+                        examChat = state.examChat.copy(
+                            messages = state.examChat.messages + assistantMsg,
+                            isGenerating = false,
+                            streamingDraft = null
+                        )
+                    )
+                }
+
+                // Auto-record graded score if AI returned "প্রাপ্ত নম্বর: X/Y"
+                maybeSaveExtractedExamChatScore(
+                    subject = finalEvent.resolvedSubject ?: resolvedSubject,
+                    intent = analysis.intent,
+                    responseText = finalEvent.fullText
+                )
+            } catch (e: TimeoutCancellationException) {
+                Log.e("EduAiViewModel", "Exam Chat timed out", e)
+                localState.update { state ->
+                    state.copy(
+                        examChat = state.examChat.copy(isGenerating = false, streamingDraft = null),
+                        errorMessage = "অনলাইন উত্তর ৬০ সেকেন্ডের মধ্যে আসেনি। আবার চেষ্টা করো।"
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("EduAiViewModel", "Exam Chat failed", e)
+                localState.update { state ->
+                    state.copy(
+                        examChat = state.examChat.copy(isGenerating = false, streamingDraft = null),
+                        errorMessage = e.localizedMessage ?: "পরীক্ষা সহায়ক উত্তর তৈরি করতে সমস্যা হয়েছে।"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun startExamHallCountdown(session: ActiveExamSession) {
+        examHallTimerJob?.cancel()
+        localState.update { it.copy(examChat = it.examChat.copy(activeSession = session)) }
+        examHallTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(1_000L)
+                val active = localState.value.examChat.activeSession ?: break
+                if (active.mode != ExamSessionMode.MADHYAMIK_TIMED) break
+                if (active.isPaused || active.isTimeUp) continue
+
+                val nextSec = (active.remainingSeconds - 1L).coerceAtLeast(0L)
+                localState.update { state ->
+                    state.copy(
+                        examChat = state.examChat.copy(
+                            activeSession = active.copy(
+                                remainingSeconds = nextSec,
+                                isTimeUp = nextSec == 0L
+                            )
+                        )
+                    )
+                }
+                if (nextSec == 0L) break
+            }
+        }
+    }
+
+    private suspend fun maybeSaveExtractedExamChatScore(
+        subject: WbbseSubject,
+        intent: ExamChatIntent,
+        responseText: String
+    ) {
+        if (intent != ExamChatIntent.HANDWRITTEN_GRADING &&
+            intent != ExamChatIntent.MADHYAMIK_TEST &&
+            intent != ExamChatIntent.NORMAL_TEST
+        ) return
+
+        val normalized = ExamIntentRouter.convertBengaliDigits(responseText)
+        val match = Regex("""(?:প্রাপ্ত\s*নম্বর|marks?\s*awarded|score)\s*[:=-]?\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
+            .find(normalized) ?: return
+
+        val obtained = match.groupValues[1].toFloatOrNull() ?: return
+        val max = match.groupValues[2].toFloatOrNull()?.takeIf { it > 0f } ?: return
+        val clampedObtained = obtained.coerceIn(0f, max)
+        val accuracy = ((clampedObtained / max) * 100f).roundToInt().coerceIn(0, 100)
+
+        studyRepository.saveExamAttempt(
+            ExamAttemptEntity(
+                subjectId = subject.id,
+                examType = intent.name,
+                questionSummary = "${subject.bengaliName} • ${intent.badgeBn}",
+                scoreObtained = clampedObtained,
+                maxMarks = max,
+                accuracyPercent = accuracy,
+                feedbackSummary = "AI মূল্যায়নকৃত স্কোর: $clampedObtained/$max ($accuracy%)"
+            )
+        )
+    }
+
+    // ==================== Flagship TOPPER Mode Delegates ====================
+
+    fun selectTopperTrack(track: TopperSubjectTrack) = topperController.selectTrack(track)
+    fun toggleTopperTwistedChallenge(enabled: Boolean) = topperController.toggleTwistedChallenge(enabled)
+    fun toggleTopperFullBlueprint(enabled: Boolean) = topperController.toggleFullBlueprint(enabled)
+    fun dismissTopperError() = topperController.dismissError()
+
+    fun startDailyTopperSet(track: TopperSubjectTrack) {
+        val snap = uiState.value
+        topperController.startDailyTopperSet(
+            track = track,
+            inferenceMode = snap.inferenceMode,
+            llamaConfig = snap.llamaConfig
+        )
+    }
+
+    fun start15MinOfflineCapsule(track: TopperSubjectTrack) =
+        topperController.start15MinOfflineCapsule(track)
+
+    fun startMistakeRecoveryTest(trackFilter: TopperSubjectTrack? = null) =
+        topperController.startMistakeRecoveryTest(trackFilter)
+
+    fun setTopperTimingBucket(bucket: TimingBucket) = topperController.setActiveTimingBucket(bucket)
+    fun toggleTopperTimerPause() = topperController.toggleTimerPause()
+    fun exitTopperActivePaper() = topperController.exitActivePaper()
+    fun selectTopperMcqAnswer(questionId: String, optionIndex: Int) =
+        topperController.selectMcqAnswer(questionId, optionIndex)
+    fun updateTopperTypedAnswer(questionId: String, section: TopperSectionType, text: String) =
+        topperController.updateTypedAnswer(questionId, section, text)
+    fun addTopperQuestionPhotoUri(questionId: String, section: TopperSectionType, uri: Uri) =
+        topperController.addQuestionPhotoUri(questionId, section, uri)
+    fun removeTopperQuestionPhoto(questionId: String, pageIndex: Int) =
+        topperController.removeQuestionPhoto(questionId, pageIndex)
+    fun submitTopperPaper() = topperController.submitTopperPaper(uiState.value.inferenceMode)
+
+    // ==================== Flagship Smart Learning ("স্মার্ট লার্নিং") Delegates ====================
+
+    fun openSmartLearning(
+        subject: WbbseSubject? = null,
+        chapterName: String? = null,
+        autoExplainNote: MasterDataEntity? = null
+    ) {
+        val snap = uiState.value
+        smartLearningController.openSmartLearning(
+            subject = subject,
+            chapterName = chapterName,
+            autoExplainNote = autoExplainNote,
+            inferenceMode = snap.inferenceMode,
+            llamaConfig = snap.llamaConfig
+        )
+    }
+
+    fun closeSmartLearning() {
+        ttsManager.stop()
+        smartLearningController.closeSmartLearning()
+    }
+
+    fun selectSmartLearningSubject(subject: WbbseSubject?) =
+        smartLearningController.selectSubject(subject)
+
+    fun selectSmartLearningChapter(chapterName: String?) =
+        smartLearningController.selectChapter(chapterName)
+
+    fun toggleSmartLearningDiagramMode() = smartLearningController.toggleGenerateDiagram()
+    fun showSmartLearningOfflinePhotoNotice() = smartLearningController.showOfflinePhotoPrompt()
+    fun dismissSmartLearningOfflinePhotoNotice() = smartLearningController.dismissOfflinePhotoNotice()
+    fun dismissSmartLearningError() = smartLearningController.dismissError()
+    fun attachSmartLearningPhotoUri(uri: Uri) = smartLearningController.attachPhotoUri(uri)
+    fun clearSmartLearningPendingPhoto() = smartLearningController.clearPendingPhoto()
+    fun clearSmartLearningSession() {
+        ttsManager.stop()
+        smartLearningController.clearSession()
+    }
+
+    fun sendSmartLearningMessage(rawText: String) {
+        val snap = uiState.value
+        ttsManager.stop()
+        smartLearningController.sendMessage(
+            rawText = rawText,
+            inferenceMode = snap.inferenceMode,
+            llamaConfig = snap.llamaConfig
+        )
+    }
+
+    fun generateSmartLearningDiagramForMessage(message: SmartLearningMessage) =
+        smartLearningController.generateDiagramForMessage(message, uiState.value.inferenceMode)
+
+    fun startSmartLearningQuickQuiz(message: SmartLearningMessage) =
+        smartLearningController.startTwoMinuteQuiz(message, uiState.value.inferenceMode)
+
+    fun selectSmartLearningQuizOption(questionId: String, optionIndex: Int) =
+        smartLearningController.selectQuizOption(questionId, optionIndex)
+
+    fun submitSmartLearningQuickQuiz() = smartLearningController.submitQuickQuiz()
+    fun closeSmartLearningQuickQuiz() = smartLearningController.closeQuickQuiz()
+
+    fun startSmartLearningMemorizer(message: SmartLearningMessage) =
+        smartLearningController.startSmartMemorizer(message, uiState.value.inferenceMode)
+
+    fun toggleSmartLearningMemorizerRecall() = smartLearningController.toggleMemorizerActiveRecall()
+    fun toggleSmartLearningMemorizerStep(step: Int) = smartLearningController.toggleMemorizerCardReveal(step)
+    fun closeSmartLearningMemorizer() {
+        ttsManager.stop()
+        smartLearningController.closeSmartMemorizer()
+    }
+
+    // ==================== Offline Exam Bank & Score Tracker ====================
 
     fun selectExamSubject(subject: WbbseSubject) {
         localState.update {

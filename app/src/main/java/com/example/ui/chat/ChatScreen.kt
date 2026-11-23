@@ -41,10 +41,12 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.rounded.AddAPhoto
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoGraph
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.OfflineBolt
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.School
@@ -115,21 +117,34 @@ fun ChatScreen(
     onSendQuestion: (String) -> Unit,
     onAttachPhotoUri: (Uri) -> Unit,
     onClearPendingPhoto: () -> Unit,
+    onToggleSmartAnswer: () -> Unit,
+    onToggleVisualMode: () -> Unit,
+    onToggleTranslateMode: () -> Unit,
+    onSelectTargetMarks: (Int?) -> Unit,
     onToggleSpeakMessage: (Long, String) -> Unit,
     onClearChat: () -> Unit,
     onOpenModelHub: () -> Unit,
+    onOpenSmartLearning: (WbbseSubject?) -> Unit,
     onShowToast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var inputText by rememberSaveable { mutableStateOf("") }
     var showPhotoSourceDialog by remember { mutableStateOf(false) }
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var zoomedDiagramPath by remember { mutableStateOf<String?>(null) }
 
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val copiedToastMsg = stringResource(R.string.chat_copied_toast)
     val cameraDeniedMsg = stringResource(R.string.camera_permission_denied)
+
+    val launchVoiceInput = rememberVoiceInputLauncher(
+        onResultText = { spoken ->
+            inputText = if (inputText.isBlank()) spoken else "$inputText $spoken"
+        },
+        onUnavailable = onShowToast
+    )
 
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -173,12 +188,13 @@ fun ChatScreen(
             .background(MaterialTheme.colorScheme.background)
             .imePadding()
     ) {
-        // 1. Header with EduAI branding + Offline/Online Hybrid Toggle Switch
+        // 1. Header with EduAI branding + Smart Learning launcher + Offline/Online Hybrid Toggle Switch
         HybridChatHeader(
             uiState = uiState,
             onToggleMode = onToggleMode,
             onClearChat = onClearChat,
-            onOpenModelHub = onOpenModelHub
+            onOpenModelHub = onOpenModelHub,
+            onOpenSmartLearning = { onOpenSmartLearning(uiState.selectedChatSubject) }
         )
 
         // 2. 7-Subject WBBSE Filter Strip
@@ -233,7 +249,8 @@ fun ChatScreen(
                             onCopyClick = {
                                 clipboard.setText(AnnotatedString(message.content))
                                 onShowToast(copiedToastMsg)
-                            }
+                            },
+                            onZoomDiagram = { path -> zoomedDiagramPath = path }
                         )
                     }
 
@@ -246,14 +263,23 @@ fun ChatScreen(
             }
         }
 
-        // 4. Message Composer Bar with Notebook Photo Attachment
+        // 4. Message Composer Bar with Smart To-The-Point, AI Visual Diagram, Mic & Notebook Photo
         ChatComposerBar(
             value = inputText,
             onValueChange = { inputText = it },
             selectedSubject = uiState.selectedChatSubject,
             pendingPhoto = uiState.pendingChatPhoto,
+            smartToThePoint = uiState.chatSmartToThePoint,
+            visualMode = uiState.chatVisualMode,
+            translateMode = uiState.chatTranslateMode,
+            targetMarks = uiState.chatTargetMarks,
             isGenerating = uiState.isGenerating,
+            onToggleSmartAnswer = onToggleSmartAnswer,
+            onToggleVisualMode = onToggleVisualMode,
+            onToggleTranslateMode = onToggleTranslateMode,
+            onSelectMarks = onSelectTargetMarks,
             onAttachPhotoClick = { showPhotoSourceDialog = true },
+            onVoiceInputClick = launchVoiceInput,
             onClearPhoto = onClearPendingPhoto,
             onSend = {
                 if (inputText.isNotBlank() || uiState.pendingChatPhoto != null) {
@@ -262,6 +288,13 @@ fun ChatScreen(
                     onSendQuestion(toSend)
                 }
             }
+        )
+    }
+
+    zoomedDiagramPath?.let { path ->
+        FullScreenDiagramDialog(
+            imagePath = path,
+            onDismiss = { zoomedDiagramPath = null }
         )
     }
 
@@ -356,7 +389,8 @@ private fun HybridChatHeader(
     uiState: EduAiUiState,
     onToggleMode: (Boolean) -> Unit,
     onClearChat: () -> Unit,
-    onOpenModelHub: () -> Unit
+    onOpenModelHub: () -> Unit,
+    onOpenSmartLearning: () -> Unit
 ) {
     val isOnlineMode = uiState.inferenceMode == InferenceMode.ONLINE
     val pillColor by animateColorAsState(
@@ -430,18 +464,52 @@ private fun HybridChatHeader(
                     }
                 }
 
-                if (uiState.chatMessages.isNotEmpty()) {
-                    IconButton(
-                        onClick = onClearChat,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        onClick = onOpenSmartLearning,
+                        shape = RoundedCornerShape(999.dp),
+                        color = OnlineCobalt.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, OnlineCobalt.copy(alpha = 0.45f)),
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
-                            .testTag("clear_chat_button")
+                            .testTag("home_smart_learning_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.DeleteSweep,
-                            contentDescription = stringResource(R.string.chat_clear_cd),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = "Open Smart Learning",
+                                tint = OnlineCobalt,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.smart_learning_short),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = OnlineCobalt,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (uiState.chatMessages.isNotEmpty()) {
+                        IconButton(
+                            onClick = onClearChat,
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("clear_chat_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteSweep,
+                                contentDescription = stringResource(R.string.chat_clear_cd),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -750,13 +818,14 @@ private fun ChatBubbleItem(
     message: ChatMessageEntity,
     isSpeaking: Boolean,
     onToggleSpeak: () -> Unit,
-    onCopyClick: () -> Unit
+    onCopyClick: () -> Unit,
+    onZoomDiagram: (String) -> Unit
 ) {
     val isUser = message.role == "user"
     val subject = WbbseSubject.fromId(message.subjectId)
     val isOnlineMsg = message.mode == InferenceMode.ONLINE.storageValue
-    val attachedBitmap = remember(message.imagePath) {
-        message.imagePath?.let { NotebookImageHelper.decodeFileThumbnail(it) }
+    val attachedBitmap = remember(message.imagePath, isUser) {
+        if (isUser) message.imagePath?.let { NotebookImageHelper.decodeFileThumbnail(it) } else null
     }
 
     Row(
@@ -853,7 +922,7 @@ private fun ChatBubbleItem(
                     )
                 }
 
-                if (attachedBitmap != null) {
+                if (isUser && attachedBitmap != null) {
                     Image(
                         bitmap = attachedBitmap.asImageBitmap(),
                         contentDescription = "Uploaded handwritten notebook photo",
@@ -862,6 +931,11 @@ private fun ChatBubbleItem(
                             .fillMaxWidth()
                             .height(160.dp)
                             .clip(RoundedCornerShape(12.dp))
+                    )
+                } else if (!isUser && !message.imagePath.isNullOrBlank()) {
+                    GeneratedDiagramCard(
+                        imagePath = message.imagePath,
+                        onZoomClick = { onZoomDiagram(message.imagePath) }
                     )
                 }
 
@@ -958,6 +1032,9 @@ private fun StreamingBubbleItem(draft: StreamingDraft) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                if (draft.isGeneratingDiagram) {
+                    DiagramGeneratingBanner()
+                }
             }
         }
     }
@@ -969,8 +1046,17 @@ private fun ChatComposerBar(
     onValueChange: (String) -> Unit,
     selectedSubject: WbbseSubject?,
     pendingPhoto: PendingPhotoAttachment?,
+    smartToThePoint: Boolean,
+    visualMode: Boolean,
+    translateMode: Boolean,
+    targetMarks: Int?,
     isGenerating: Boolean,
+    onToggleSmartAnswer: () -> Unit,
+    onToggleVisualMode: () -> Unit,
+    onToggleTranslateMode: () -> Unit,
+    onSelectMarks: (Int?) -> Unit,
     onAttachPhotoClick: () -> Unit,
+    onVoiceInputClick: () -> Unit,
     onClearPhoto: () -> Unit,
     onSend: () -> Unit
 ) {
@@ -986,8 +1072,19 @@ private fun ChatComposerBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            // Smart To-The-Point Answer + Marks + Translate Strip right above input
+            SmartAnswerAndToolsStrip(
+                smartToThePoint = smartToThePoint,
+                translateMode = translateMode,
+                targetMarks = targetMarks,
+                onToggleSmartAnswer = onToggleSmartAnswer,
+                onToggleTranslate = onToggleTranslateMode,
+                onSelectMarks = onSelectMarks,
+                testTagPrefix = "main_chat"
+            )
+
             // Pending Handwritten Notebook Photo Preview Chip
             if (pendingPhoto != null) {
                 Surface(
@@ -1036,12 +1133,13 @@ private fun ChatComposerBar(
                 }
             }
 
+            // Quick Action Icon Bar: Camera + Mic + Dedicated "AI Visual / ছবি দিয়ে বুঝিয়ে দাও" Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Camera / Gallery Attachment Button
+                // Camera / Gallery Button
                 Surface(
                     onClick = onAttachPhotoClick,
                     enabled = !isGenerating,
@@ -1064,11 +1162,72 @@ private fun ChatComposerBar(
                             } else {
                                 MaterialTheme.colorScheme.primary
                             },
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
+                // Mic / Voice Input Button
+                Surface(
+                    onClick = onVoiceInputClick,
+                    enabled = !isGenerating,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("chat_voice_input_button")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.Mic,
+                            contentDescription = stringResource(R.string.voice_input_cd),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Dedicated "AI Visual / ছবি দিয়ে বুঝিয়ে দাও" Toggle Button right next to Camera & Mic
+                Surface(
+                    onClick = onToggleVisualMode,
+                    enabled = !isGenerating,
+                    shape = RoundedCornerShape(24.dp),
+                    color = if (visualMode) OnlineCobalt else MaterialTheme.colorScheme.surfaceVariant,
+                    border = if (visualMode) null else BorderStroke(1.dp, OnlineCobalt.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("chat_ai_visual_toggle")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoGraph,
+                            contentDescription = stringResource(R.string.ai_visual_cd),
+                            tint = if (visualMode) Color.White else OnlineCobalt,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.ai_visual_toggle),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (visualMode) Color.White else OnlineCobalt,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 OutlinedTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -1076,6 +1235,8 @@ private fun ChatComposerBar(
                         Text(
                             text = when {
                                 pendingPhoto != null -> "খাতার ছবি নিয়ে কিছু বলো (ঐচ্ছিক)…"
+                                visualMode -> "ডায়াগ্রাম দেখতে টপিক লেখো (যেমন: অ্যানাফেজ, বয়েলের সূত্র)…"
+                                smartToThePoint -> "টু-দ্য-পয়েন্ট বোর্ড উত্তরের প্রশ্ন লেখো…"
                                 selectedSubject != null -> "${selectedSubject.bengaliName} নিয়ে প্রশ্ন লেখো…"
                                 else -> stringResource(R.string.chat_input_placeholder)
                             },

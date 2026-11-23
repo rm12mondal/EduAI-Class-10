@@ -62,3 +62,36 @@ interface ExamAttemptDao {
     @Query("DELETE FROM exam_attempts")
     suspend fun clearAllAttempts()
 }
+
+@Dao
+interface TopperDao {
+    @Query("SELECT * FROM topper_set_progress ORDER BY timestamp DESC")
+    fun observeAllSetProgress(): Flow<List<TopperSetProgressEntity>>
+
+    @Query("SELECT * FROM topper_set_progress WHERE trackId = :trackId ORDER BY setNumber ASC")
+    suspend fun getProgressForTrack(trackId: String): List<TopperSetProgressEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSetProgress(progress: TopperSetProgressEntity): Long
+
+    @Query("SELECT * FROM topper_mistakes WHERE isResolved = 0 ORDER BY timestamp DESC")
+    fun observeActiveMistakes(): Flow<List<TopperMistakeEntity>>
+
+    @Query("SELECT * FROM topper_mistakes WHERE trackId = :trackId AND isResolved = 0 ORDER BY timestamp DESC")
+    suspend fun getActiveMistakesForTrack(trackId: String): List<TopperMistakeEntity>
+
+    @Query("SELECT * FROM topper_mistakes WHERE isResolved = 0 ORDER BY timestamp DESC")
+    suspend fun getAllActiveMistakes(): List<TopperMistakeEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMistakes(mistakes: List<TopperMistakeEntity>)
+
+    @Query("UPDATE topper_mistakes SET isResolved = 1 WHERE questionId IN (:questionIds)")
+    suspend fun markMistakesResolved(questionIds: List<String>)
+
+    @Query("DELETE FROM topper_set_progress")
+    suspend fun clearSetProgress()
+
+    @Query("DELETE FROM topper_mistakes")
+    suspend fun clearMistakes()
+}

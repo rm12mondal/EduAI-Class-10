@@ -5,7 +5,8 @@
     <!-- Navigation -->
     <string name="nav_chat">চ্যাট</string>
     <string name="nav_subjects">৭টি বিষয়</string>
-    <string name="nav_exams">পরীক্ষা ও ফলাফল</string>
+    <string name="nav_exams">পরীক্ষা</string>
+    <string name="nav_topper">টপার</string>
     <string name="nav_model">মডেল</string>
 
     <!-- Hybrid Mode -->
@@ -68,4 +69,29 @@
     <string name="voice_test_button">ভয়েস পরীক্ষা করুন</string>
     <string name="voice_stop_button">বন্ধ করুন</string>
     <string name="voice_auto_default">সিস্টেম ডিফল্ট (Auto)</string>
+
+    <!-- Smart Answer, AI Visual & 3-in-1 Exam Chat -->
+    <string name="smart_answer_toggle">টু-দ্য-পয়েন্ট উত্তর</string>
+    <string name="smart_answer_cd">স্মার্ট টু-দ্য-পয়েন্ট মাধ্যমিক উত্তর মোড টগল করো</string>
+    <string name="ai_visual_toggle">ছবি দিয়ে বুঝিয়ে দাও</string>
+    <string name="ai_visual_cd">AI ভিজ্যুয়াল ডায়াগ্রাম মোড টগল করো</string>
+    <string name="voice_input_cd">ভয়েস দিয়ে প্রশ্ন বলো</string>
+    <string name="voice_input_prompt">বাংলা বা ইংরেজিতে তোমার প্রশ্ন বলো…</string>
+    <string name="voice_input_unavailable">এই ডিভাইসে ভয়েস ইনপুট পাওয়া যায়নি।</string>
+    <string name="translate_toggle">বাংলা ↔ English</string>
+    <string name="exams_tab_smart_chat">স্মার্ট চ্যাট</string>
+    <string name="exams_tab_offline_bank">অফলাইন ব্যাংক</string>
+    <string name="diagram_generating">AI ভিজ্যুয়াল ডায়াগ্রাম তৈরি হচ্ছে (৩০–৬০ সেকেন্ড লাগতে পারে)…</string>
+    <string name="diagram_tap_zoom">বড় করে দেখতে ছবিতে ট্যাপ করো</string>
+    <string name="exam_chat_placeholder">প্রশ্ন লেখো, “নরমাল টেস্ট” বা “মাধ্যমিক টেস্ট” বলো, অথবা খাতার ছবি দাও…</string>
+
+    <!-- Smart Learning AI Tutor -->
+    <string name="smart_learning_title">স্মার্ট লার্নিং (Smart Learning)</string>
+    <string name="smart_learning_short">স্মার্ট লার্নিং</string>
+    <string name="smart_learning_camera_btn">ক্যামেরায় ছবি তুলুন</string>
+    <string name="smart_learning_gallery_btn">গ্যালারি থেকে ছবি দিন</string>
+    <string name="smart_learning_visual_btn">ছবি তৈরি করে বুঝিয়ে দাও</string>
+    <string name="smart_learning_placeholder">যেকোনো কঠিন পড়া, অঙ্ক বা ব্যাকরণ সহজ বাংলায় জিজ্ঞেস করো…</string>
+    <string name="smart_learning_action_quiz">পড়া বুঝেছি — ২ মিনিটের কুইজ দিন</string>
+    <string name="smart_learning_action_memorize">এই টপিকের বড় প্রশ্ন মুখস্থ করুন</string>
 </resources>

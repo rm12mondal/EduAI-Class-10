@@ -34,11 +34,44 @@ data class ChatMessageEntity(
 data class ExamAttemptEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val subjectId: String,
-    val examType: String, // "MCQ", "SAQ", "LONG"
+    val examType: String, // "MCQ", "SAQ", "LONG", "TOPPER", "MADHYAMIK_CHAT"
     val questionSummary: String,
     val scoreObtained: Float,
     val maxMarks: Float,
     val accuracyPercent: Int,
     val feedbackSummary: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "topper_set_progress")
+data class TopperSetProgressEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val trackId: String,
+    val setNumber: Int,
+    val usedQuestionIdsCsv: String,
+    val scoreObtained: Float,
+    val maxMarks: Float,
+    val dateStamp: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "topper_mistakes")
+data class TopperMistakeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val trackId: String,
+    val questionId: String,
+    val sectionCode: String,
+    val marks: Int,
+    val chapter: String,
+    val questionText: String,
+    val optionsJoined: String, // separated by "|||" for MCQs
+    val correctOptionIndex: Int,
+    val isTwisted: Boolean,
+    val simpleMeaningBn: String,
+    val modelAnswer: String,
+    val presentationTip: String,
+    val keyTermsCsv: String,
+    val mistakeNote: String,
+    val isResolved: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )

@@ -105,10 +105,22 @@ fun ExamScreen(
     onEvaluateSubjective: (WbbseSubject, ExamFormat, String, Int, String, List<String>, String) -> Unit,
     onClearEvaluation: () -> Unit,
     onClearExamHistory: () -> Unit,
+    onToggleExamSmartMode: () -> Unit,
+    onToggleExamVisualMode: () -> Unit,
+    onToggleExamTranslateMode: () -> Unit,
+    onSelectExamTargetMarks: (Int?) -> Unit,
+    onAttachExamChatPhotoUri: (Uri) -> Unit,
+    onClearExamChatPhoto: () -> Unit,
+    onToggleExamSessionPause: () -> Unit,
+    onEndExamSession: () -> Unit,
+    onClearExamChat: () -> Unit,
+    onSendExamChatMessage: (String) -> Unit,
+    onToggleSpeakMessage: (Long, String) -> Unit,
     onShowSnackbar: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var activeSubTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Practice, 1 = Progress
+    // 0 = 3-in-1 Smart Exam Chat, 1 = Offline 252+ Question Bank, 2 = Score & Progress Dashboard
+    var activeSubTab by rememberSaveable { mutableIntStateOf(0) }
 
     Box(
         modifier = modifier
@@ -121,7 +133,7 @@ fun ExamScreen(
                 .fillMaxSize()
                 .widthIn(max = 720.dp)
         ) {
-            // Header + Segmented Switch (পরীক্ষা দাও ↔ ফলাফল ও প্রগ্রেস)
+            // Header + 3-Way Segmented Switch (স্মার্ট চ্যাট ↔ অফলাইন ব্যাংক ↔ ফলাফল)
             Surface(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 1.dp,
@@ -150,18 +162,35 @@ fun ExamScreen(
                         SegmentedButton(
                             selected = activeSubTab == 0,
                             onClick = { activeSubTab = 0 },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                            modifier = Modifier.testTag("exam_subtab_practice")
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
+                            modifier = Modifier.testTag("exam_subtab_chat")
                         ) {
-                            Text(stringResource(R.string.exams_tab_practice))
+                            Text(
+                                text = "স্মার্ট চ্যাট",
+                                maxLines = 1
+                            )
                         }
                         SegmentedButton(
                             selected = activeSubTab == 1,
                             onClick = { activeSubTab = 1 },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
+                            modifier = Modifier.testTag("exam_subtab_practice")
+                        ) {
+                            Text(
+                                text = "ব্যাংক (${WbbseExamBank.totalQuestionCount})",
+                                maxLines = 1
+                            )
+                        }
+                        SegmentedButton(
+                            selected = activeSubTab == 2,
+                            onClick = { activeSubTab = 2 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
                             modifier = Modifier.testTag("exam_subtab_progress")
                         ) {
-                            Text("${stringResource(R.string.exams_tab_progress)} (${uiState.examAttempts.size})")
+                            Text(
+                                text = "ফলাফল (${uiState.examAttempts.size})",
+                                maxLines = 1
+                            )
                         }
                     }
                 }
@@ -169,8 +198,25 @@ fun ExamScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            if (activeSubTab == 0) {
-                ExamPracticeSection(
+            when (activeSubTab) {
+                0 -> ExamChatSection(
+                    uiState = uiState,
+                    onToggleSmartMode = onToggleExamSmartMode,
+                    onToggleVisualMode = onToggleExamVisualMode,
+                    onToggleTranslateMode = onToggleExamTranslateMode,
+                    onSelectTargetMarks = onSelectExamTargetMarks,
+                    onAttachPhotoUri = onAttachExamChatPhotoUri,
+                    onClearPendingPhoto = onClearExamChatPhoto,
+                    onToggleSessionPause = onToggleExamSessionPause,
+                    onEndExamSession = onEndExamSession,
+                    onClearExamChat = onClearExamChat,
+                    onSendExamMessage = onSendExamChatMessage,
+                    onToggleSpeakMessage = onToggleSpeakMessage,
+                    onShowSnackbar = onShowSnackbar,
+                    modifier = Modifier.weight(1f)
+                )
+
+                1 -> ExamPracticeSection(
                     uiState = uiState,
                     onSelectSubject = onSelectSubject,
                     onSelectFormat = onSelectFormat,
@@ -182,13 +228,13 @@ fun ExamScreen(
                     onShowSnackbar = onShowSnackbar,
                     modifier = Modifier.weight(1f)
                 )
-            } else {
-                ExamProgressDashboard(
+
+                else -> ExamProgressDashboard(
                     stats = uiState.progressStats,
                     attempts = uiState.examAttempts,
                     onPracticeSubject = { subj ->
                         onSelectSubject(subj)
-                        activeSubTab = 0
+                        activeSubTab = 1
                     },
                     onClearHistory = onClearExamHistory,
                     modifier = Modifier.weight(1f)
@@ -318,9 +364,12 @@ private fun McqExamRunner(
     onSubmitQuiz: (WbbseSubject, Int, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val questions = remember(subject) { WbbseExamBank.getMcqs(subject) }
-    val selectedAnswers = remember(subject) { mutableStateMapOf<String, Int>() }
-    var submitted by remember(subject) { mutableStateOf(false) }
+    val allQuestions = remember(subject) { WbbseExamBank.getMcqs(subject) }
+    val questionSets = remember(allQuestions) { allQuestions.chunked(5) }
+    var selectedSetIndex by remember(subject) { mutableIntStateOf(0) }
+    val questions = questionSets.getOrElse(selectedSetIndex) { allQuestions }
+    val selectedAnswers = remember(subject, selectedSetIndex) { mutableStateMapOf<String, Int>() }
+    var submitted by remember(subject, selectedSetIndex) { mutableStateOf(false) }
 
     val correctCount = questions.count { q -> selectedAnswers[q.id] == q.correctIndex }
 
@@ -331,6 +380,28 @@ private fun McqExamRunner(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (questionSets.size > 1) {
+            item(key = "mcq_set_selector") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    itemsIndexed(questionSets) { setIdx, chunk ->
+                        FilterChip(
+                            selected = setIdx == selectedSetIndex,
+                            onClick = { selectedSetIndex = setIdx },
+                            label = { Text("সেট ${setIdx + 1} (${chunk.size})") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = subject.accentColor,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.testTag("mcq_set_chip_${setIdx + 1}")
+                        )
+                    }
+                }
+            }
+        }
+
         if (submitted) {
             item {
                 val pct = ((correctCount.toFloat() / questions.size.coerceAtLeast(1)) * 100).toInt()
@@ -591,10 +662,13 @@ private fun SubjectiveExamRunner(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Question Selector Pills
+        // Question Selector Pills (Scrollable for all 10 SAQs / 5 Broads)
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items.forEachIndexed { idx, _ ->
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                itemsIndexed(items) { idx, _ ->
                     FilterChip(
                         selected = idx == selectedIndex,
                         onClick = {
@@ -602,7 +676,11 @@ private fun SubjectiveExamRunner(
                             onClearEvaluation()
                             onClearPhoto()
                         },
-                        label = { Text("প্রশ্ন ${idx + 1}") }
+                        label = { Text("প্রশ্ন ${idx + 1}") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = subject.accentColor,
+                            selectedLabelColor = Color.White
+                        )
                     )
                 }
             }

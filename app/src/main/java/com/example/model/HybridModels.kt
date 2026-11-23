@@ -52,6 +52,7 @@ enum class AppTab {
     CHAT,
     SUBJECTS,
     EXAMS,
+    TOPPER,
     MODEL_HUB
 }
 

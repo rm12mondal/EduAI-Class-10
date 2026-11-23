@@ -12,10 +12,12 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Quiz
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Quiz
+import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -43,10 +45,13 @@ import com.example.R
 import com.example.model.AppTab
 import com.example.ui.chat.ChatScreen
 import com.example.ui.exam.ExamScreen
+import com.example.ui.learning.SmartLearningScreen
 import com.example.ui.model.ModelManagerScreen
 import com.example.ui.subjects.SubjectsScreen
+import com.example.ui.topper.TopperScreen
 import com.example.viewmodel.EduAiUiState
 import com.example.viewmodel.EduAiViewModel
+import com.example.viewmodel.TopperUiState
 import kotlinx.coroutines.launch
 
 private data class NavDestination(
@@ -80,6 +85,13 @@ private val appDestinations = listOf(
         testTag = "nav_tab_exams"
     ),
     NavDestination(
+        tab = AppTab.TOPPER,
+        labelRes = R.string.nav_topper,
+        selectedIcon = Icons.Rounded.WorkspacePremium,
+        unselectedIcon = Icons.Outlined.WorkspacePremium,
+        testTag = "nav_tab_topper"
+    ),
+    NavDestination(
         tab = AppTab.MODEL_HUB,
         labelRes = R.string.nav_model,
         selectedIcon = Icons.Rounded.Memory,
@@ -93,6 +105,8 @@ fun EduAiApp(
     viewModel: EduAiViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val topperState by viewModel.topperState.collectAsStateWithLifecycle()
+    val smartLearningState by viewModel.smartLearningState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -104,6 +118,22 @@ fun EduAiApp(
         }
     }
 
+    LaunchedEffect(topperState.errorMessage) {
+        val error = topperState.errorMessage
+        if (!error.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(error)
+            viewModel.dismissTopperError()
+        }
+    }
+
+    LaunchedEffect(smartLearningState.errorMessage) {
+        val error = smartLearningState.errorMessage
+        if (!error.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(error)
+            viewModel.dismissSmartLearningError()
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavRail = maxWidth >= 600.dp
 
@@ -111,7 +141,7 @@ fun EduAiApp(
             contentWindowInsets = WindowInsets.safeDrawing,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             bottomBar = {
-                if (!useNavRail) {
+                if (!useNavRail && !smartLearningState.isOpen) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
@@ -140,47 +170,84 @@ fun EduAiApp(
                 }
             }
         ) { innerPadding ->
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                if (useNavRail) {
-                    NavigationRail(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ) {
-                        appDestinations.forEach { dest ->
-                            val selected = uiState.activeTab == dest.tab
-                            NavigationRailItem(
-                                selected = selected,
-                                onClick = { viewModel.selectTab(dest.tab) },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                        contentDescription = stringResource(dest.labelRes)
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = stringResource(dest.labelRes),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                },
-                                modifier = Modifier.testTag(dest.testTag)
-                            )
+            if (smartLearningState.isOpen) {
+                SmartLearningScreen(
+                    state = smartLearningState,
+                    masterNotes = uiState.masterNotes,
+                    inferenceMode = uiState.inferenceMode,
+                    speakingMessageId = uiState.ttsState.speakingMessageId,
+                    onBack = viewModel::closeSmartLearning,
+                    onToggleInferenceMode = viewModel::toggleInferenceMode,
+                    onSelectSubject = viewModel::selectSmartLearningSubject,
+                    onSelectChapter = viewModel::selectSmartLearningChapter,
+                    onToggleDiagramMode = viewModel::toggleSmartLearningDiagramMode,
+                    onShowOfflinePhotoNotice = viewModel::showSmartLearningOfflinePhotoNotice,
+                    onDismissOfflinePhotoNotice = viewModel::dismissSmartLearningOfflinePhotoNotice,
+                    onAttachPhotoUri = viewModel::attachSmartLearningPhotoUri,
+                    onClearPendingPhoto = viewModel::clearSmartLearningPendingPhoto,
+                    onClearSession = viewModel::clearSmartLearningSession,
+                    onSendMessage = viewModel::sendSmartLearningMessage,
+                    onGenerateDiagramForMessage = viewModel::generateSmartLearningDiagramForMessage,
+                    onStartTwoMinuteQuiz = viewModel::startSmartLearningQuickQuiz,
+                    onSelectQuizOption = viewModel::selectSmartLearningQuizOption,
+                    onSubmitQuickQuiz = viewModel::submitSmartLearningQuickQuiz,
+                    onCloseQuickQuiz = viewModel::closeSmartLearningQuickQuiz,
+                    onStartSmartMemorizer = viewModel::startSmartLearningMemorizer,
+                    onToggleMemorizerRecall = viewModel::toggleSmartLearningMemorizerRecall,
+                    onToggleMemorizerRevealStep = viewModel::toggleSmartLearningMemorizerStep,
+                    onCloseSmartMemorizer = viewModel::closeSmartLearningMemorizer,
+                    onToggleSpeak = viewModel::toggleSpeakMessage,
+                    onShowSnackbar = { msg ->
+                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                )
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
+                    if (useNavRail) {
+                        NavigationRail(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ) {
+                            appDestinations.forEach { dest ->
+                                val selected = uiState.activeTab == dest.tab
+                                NavigationRailItem(
+                                    selected = selected,
+                                    onClick = { viewModel.selectTab(dest.tab) },
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                            contentDescription = stringResource(dest.labelRes)
+                                        )
+                                    },
+                                    label = {
+                                        Text(
+                                            text = stringResource(dest.labelRes),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    },
+                                    modifier = Modifier.testTag(dest.testTag)
+                                )
+                            }
                         }
                     }
-                }
 
-                Box(modifier = Modifier.weight(1f)) {
-                    ActiveScreenHost(
-                        uiState = uiState,
-                        viewModel = viewModel,
-                        onShowSnackbar = { msg ->
-                            scope.launch { snackbarHostState.showSnackbar(msg) }
-                        }
-                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        ActiveScreenHost(
+                            uiState = uiState,
+                            topperState = topperState,
+                            viewModel = viewModel,
+                            onShowSnackbar = { msg ->
+                                scope.launch { snackbarHostState.showSnackbar(msg) }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -190,6 +257,7 @@ fun EduAiApp(
 @Composable
 private fun ActiveScreenHost(
     uiState: EduAiUiState,
+    topperState: TopperUiState,
     viewModel: EduAiViewModel,
     onShowSnackbar: (String) -> Unit
 ) {
@@ -201,9 +269,14 @@ private fun ActiveScreenHost(
             onSendQuestion = { q -> viewModel.sendQuestion(q) },
             onAttachPhotoUri = viewModel::attachChatPhotoUri,
             onClearPendingPhoto = viewModel::clearPendingChatPhoto,
+            onToggleSmartAnswer = viewModel::toggleChatSmartToThePoint,
+            onToggleVisualMode = viewModel::toggleChatVisualMode,
+            onToggleTranslateMode = viewModel::toggleChatTranslateMode,
+            onSelectTargetMarks = viewModel::setChatTargetMarks,
             onToggleSpeakMessage = viewModel::toggleSpeakMessage,
             onClearChat = viewModel::clearChatHistory,
             onOpenModelHub = { viewModel.selectTab(AppTab.MODEL_HUB) },
+            onOpenSmartLearning = { subj -> viewModel.openSmartLearning(subject = subj) },
             onShowToast = onShowSnackbar
         )
 
@@ -214,6 +287,8 @@ private fun ActiveScreenHost(
             onSearchQueryChange = viewModel::updateSubjectSearchQuery,
             onSelectSubject = viewModel::openSubjectDetail,
             onAskTutorFromNote = viewModel::askFromMasterNote,
+            onOpenSmartLearningForSubject = { subj -> viewModel.openSmartLearning(subject = subj) },
+            onOpenSmartLearningForNote = { note -> viewModel.openSmartLearning(autoExplainNote = note) },
             onToggleBookmark = viewModel::toggleBookmark,
             onAddCustomNote = viewModel::addCustomNote,
             onDeleteCustomNote = viewModel::deleteCustomNote
@@ -229,6 +304,37 @@ private fun ActiveScreenHost(
             onEvaluateSubjective = viewModel::evaluateSubjectiveExam,
             onClearEvaluation = viewModel::clearLatestExamEvaluation,
             onClearExamHistory = viewModel::clearExamHistory,
+            onToggleExamSmartMode = viewModel::toggleExamSmartMode,
+            onToggleExamVisualMode = viewModel::toggleExamVisualMode,
+            onToggleExamTranslateMode = viewModel::toggleExamTranslateMode,
+            onSelectExamTargetMarks = viewModel::setExamTargetMarks,
+            onAttachExamChatPhotoUri = viewModel::attachExamChatPhotoUri,
+            onClearExamChatPhoto = viewModel::clearPendingExamChatPhoto,
+            onToggleExamSessionPause = viewModel::toggleExamSessionPause,
+            onEndExamSession = viewModel::endExamSession,
+            onClearExamChat = viewModel::clearExamChat,
+            onSendExamChatMessage = viewModel::sendExamChatMessage,
+            onToggleSpeakMessage = viewModel::toggleSpeakMessage,
+            onShowSnackbar = onShowSnackbar
+        )
+
+        AppTab.TOPPER -> TopperScreen(
+            topperState = topperState,
+            inferenceMode = uiState.inferenceMode,
+            onSelectTrack = viewModel::selectTopperTrack,
+            onToggleTwistedChallenge = viewModel::toggleTopperTwistedChallenge,
+            onToggleFullBlueprint = viewModel::toggleTopperFullBlueprint,
+            onStartDailySet = viewModel::startDailyTopperSet,
+            onStart15MinCapsule = viewModel::start15MinOfflineCapsule,
+            onStartMistakeRecovery = viewModel::startMistakeRecoveryTest,
+            onSelectTimingBucket = viewModel::setTopperTimingBucket,
+            onToggleTimerPause = viewModel::toggleTopperTimerPause,
+            onExitActivePaper = viewModel::exitTopperActivePaper,
+            onSelectMcqOption = viewModel::selectTopperMcqAnswer,
+            onUpdateTypedAnswer = viewModel::updateTopperTypedAnswer,
+            onAddPhotoUri = viewModel::addTopperQuestionPhotoUri,
+            onRemovePhoto = viewModel::removeTopperQuestionPhoto,
+            onSubmitPaper = viewModel::submitTopperPaper,
             onShowSnackbar = onShowSnackbar
         )
 
