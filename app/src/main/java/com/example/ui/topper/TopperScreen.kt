@@ -23,9 +23,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material.icons.rounded.WorkspacePremium
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,10 +59,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.topper.TopperQuestionBank
 import com.example.model.InferenceMode
+import com.example.model.MapBoardDomain
+import com.example.model.ScorePredictorSummary
 import com.example.model.SubjectMasteryStatus
 import com.example.model.TimingBucket
 import com.example.model.TopperSectionType
 import com.example.model.TopperSubjectTrack
+import com.example.model.WbbseSubject
+import com.example.ui.master.ScorePredictorCard
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -75,6 +84,8 @@ import com.example.viewmodel.TopperUiState
 fun TopperScreen(
     topperState: TopperUiState,
     inferenceMode: InferenceMode,
+    scorePredictor: ScorePredictorSummary,
+    savedPdfCount: Int,
     onSelectTrack: (TopperSubjectTrack) -> Unit,
     onToggleTwistedChallenge: (Boolean) -> Unit,
     onToggleFullBlueprint: (Boolean) -> Unit,
@@ -89,6 +100,12 @@ fun TopperScreen(
     onAddPhotoUri: (String, TopperSectionType, Uri) -> Unit,
     onRemovePhoto: (String, Int) -> Unit,
     onSubmitPaper: () -> Unit,
+    onOpenMapBoard: (MapBoardDomain) -> Unit,
+    onOpenRapidFire: (WbbseSubject?) -> Unit,
+    onOpenBrahmastram: () -> Unit,
+    onOpenPocketBook: () -> Unit,
+    onOpenSavedPdfs: () -> Unit,
+    onFocusSubject: (WbbseSubject) -> Unit,
     onShowSnackbar: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -135,12 +152,20 @@ fun TopperScreen(
                     TopperMasteryDashboard(
                         topperState = topperState,
                         inferenceMode = inferenceMode,
+                        scorePredictor = scorePredictor,
+                        savedPdfCount = savedPdfCount,
                         onSelectTrack = onSelectTrack,
                         onToggleTwistedChallenge = onToggleTwistedChallenge,
                         onToggleFullBlueprint = onToggleFullBlueprint,
                         onStartDailySet = onStartDailySet,
                         onStart15MinCapsule = onStart15MinCapsule,
-                        onStartMistakeRecovery = onStartMistakeRecovery
+                        onStartMistakeRecovery = onStartMistakeRecovery,
+                        onOpenMapBoard = onOpenMapBoard,
+                        onOpenRapidFire = onOpenRapidFire,
+                        onOpenBrahmastram = onOpenBrahmastram,
+                        onOpenPocketBook = onOpenPocketBook,
+                        onOpenSavedPdfs = onOpenSavedPdfs,
+                        onFocusSubject = onFocusSubject
                     )
                 }
             }
@@ -152,12 +177,20 @@ fun TopperScreen(
 private fun TopperMasteryDashboard(
     topperState: TopperUiState,
     inferenceMode: InferenceMode,
+    scorePredictor: ScorePredictorSummary,
+    savedPdfCount: Int,
     onSelectTrack: (TopperSubjectTrack) -> Unit,
     onToggleTwistedChallenge: (Boolean) -> Unit,
     onToggleFullBlueprint: (Boolean) -> Unit,
     onStartDailySet: (TopperSubjectTrack) -> Unit,
     onStart15MinCapsule: (TopperSubjectTrack) -> Unit,
-    onStartMistakeRecovery: (TopperSubjectTrack?) -> Unit
+    onStartMistakeRecovery: (TopperSubjectTrack?) -> Unit,
+    onOpenMapBoard: (MapBoardDomain) -> Unit,
+    onOpenRapidFire: (WbbseSubject?) -> Unit,
+    onOpenBrahmastram: () -> Unit,
+    onOpenPocketBook: () -> Unit,
+    onOpenSavedPdfs: () -> Unit,
+    onFocusSubject: (WbbseSubject) -> Unit
 ) {
     val masteryList = topperState.masteryList.ifEmpty {
         TopperSubjectTrack.entries.map { track ->
@@ -500,6 +533,251 @@ private fun TopperMasteryDashboard(
                     }
                 }
             }
+        }
+
+        // 3b. Interactive Map Pointing Board (14 Marks) + Rapid Fire MCQ Speed Booster
+        item(key = "topper_map_and_rapid_row") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                val defaultMapDomain = if (topperState.selectedTrack == TopperSubjectTrack.HISTORY) {
+                    MapBoardDomain.HISTORY
+                } else {
+                    MapBoardDomain.GEOGRAPHY
+                }
+                Card(
+                    onClick = { onOpenMapBoard(defaultMapDomain) },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF00796B).copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, Color(0xFF00796B).copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topper_map_board_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Map,
+                                contentDescription = null,
+                                tint = Color(0xFF00796B),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "ম্যাপ বোর্ড (১৪ নম্বর)",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color(0xFF00796B),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = "ইতিহাস (৪) ও ভূগোল (১০) জুম-যোগ্য ভারতের মানচিত্র",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Card(
+                    onClick = { onOpenRapidFire(topperState.selectedTrack.linkedSubject) },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = OnlineCobalt.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, OnlineCobalt.copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topper_rapid_fire_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Speed,
+                                contentDescription = null,
+                                tint = OnlineCobalt,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "র্যাপিড ফায়ার MCQ",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = OnlineCobalt,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = "২০/৩০ প্রশ্ন • ৩০ সে./১৫ মি. টাইমার • স্পিড অ্যানালিটিক্স",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3c. Flagship Brahmastram (Sure-Shot Notes + Timed Exam) Hero Card
+        item(key = "topper_brahmastram_card") {
+            Card(
+                onClick = onOpenBrahmastram,
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFB71C1C).copy(alpha = 0.11f)),
+                border = BorderStroke(1.3.dp, Color(0xFFC62828).copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("topper_brahmastram_card")
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFFC62828),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Whatshot,
+                                contentDescription = "Brahmastram",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "ব্রহ্মাস্ত্রম (Sure-Shot Notes + Exam)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color(0xFFB71C1C),
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "১. শিওর-শট সাজেশন নোটস পড়ো • ২. অডিও/PDF সেভ করো • ৩. ঠিক সেই নোটস থেকেই টাইমড পরীক্ষা + লাল-কালি রিপোর্ট!",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3d. Pocket Book Vault + Saved PDFs Library Row
+        item(key = "topper_pocket_and_pdf_row") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Card(
+                    onClick = onOpenPocketBook,
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF4527A0).copy(alpha = 0.11f)),
+                    border = BorderStroke(1.dp, Color(0xFF4527A0).copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topper_pocket_book_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MenuBook,
+                                contentDescription = null,
+                                tint = Color(0xFF4527A0),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "পকেট বুক ভল্ট",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color(0xFF4527A0),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = "গণিত সূত্র, বিক্রিয়া, সাল-তারিখ ও লেখক-উৎস (অফলাইন)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Card(
+                    onClick = onOpenSavedPdfs,
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFC62828).copy(alpha = 0.10f)),
+                    border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topper_saved_pdfs_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PictureAsPdf,
+                                contentDescription = null,
+                                tint = Color(0xFFC62828),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "সেভ করা PDF ($savedPdfCount)",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color(0xFFC62828),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = "Downloads/EduAI_Notes/ • খুলো, রিনেম ও WhatsApp শেয়ার",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3e. Feature #7: Score Predictor (/700) Card on Topper Dashboard
+        item(key = "topper_score_predictor_card") {
+            ScorePredictorCard(
+                summary = scorePredictor,
+                onFocusSubject = onFocusSubject,
+                compact = false
+            )
         }
 
         // Generating Paper Progress Banner

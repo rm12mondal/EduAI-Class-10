@@ -52,8 +52,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.master.StrictWbbsePrecisionEngine
 import com.example.model.TopperQuestionFeedback
 import com.example.model.TopperSubmissionReport
+import com.example.model.WbbseSubject
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -354,7 +356,11 @@ fun TopperReportCard(
 
             // 5. Per-Question Feedback Cards
             itemsIndexed(report.questionFeedbacks, key = { idx, fb -> "${fb.question.id}_$idx" }) { idx, fb ->
-                TopperQuestionFeedbackCard(index = idx + 1, feedback = fb)
+                TopperQuestionFeedbackCard(
+                    index = idx + 1,
+                    subject = report.track.linkedSubject,
+                    feedback = fb
+                )
             }
 
             // 6. Footer Action Buttons (Mistake Recovery + Next Rotational Set)
@@ -461,9 +467,19 @@ private fun TimeMetricChip(
 @Composable
 private fun TopperQuestionFeedbackCard(
     index: Int,
+    subject: WbbseSubject,
     feedback: TopperQuestionFeedback
 ) {
     val q = feedback.question
+    val trapAnalysis = StrictWbbsePrecisionEngine.detectQuestionTraps(q.questionText)
+    val redPenLogs = StrictWbbsePrecisionEngine.buildRedPenDeductionLog(
+        subject = subject,
+        questionText = q.questionText,
+        studentAnswer = feedback.studentSummary,
+        obtainedMarks = feedback.marksAwarded,
+        maxMarks = feedback.maxMarks,
+        missingKeyTerms = q.keyTerms.filterNot { feedback.studentSummary.contains(it, ignoreCase = true) }
+    )
     val statusColor = if (feedback.isCorrectOrStrong) SageOffline else TerracottaAccent
     val scoreText = if (feedback.marksAwarded % 1f == 0f) {
         "${feedback.marksAwarded.toInt()}/${feedback.maxMarks.toInt()}"
@@ -538,6 +554,51 @@ private fun TopperQuestionFeedbackCard(
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            // Feature #16: লাল কালি ও ট্র্যাপ অ্যালার্ট (Question-Trap Alert + Red-Pen Deduction Log)
+            trapAnalysis.warningBn?.let { trapWarn ->
+                Surface(
+                    color = Color(0xFFD32F2F).copy(alpha = 0.11f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFFD32F2F).copy(alpha = 0.45f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = trapWarn,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFB71C1C),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                    )
+                }
+            }
+            if (redPenLogs.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFFFFEBEE),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE57373)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = "🖊️ নম্বর কাটার কারণ (Red-Pen Deduction Log):",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFB71C1C)
+                        )
+                        redPenLogs.forEach { log ->
+                            Text(
+                                text = log,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF3E2723)
+                            )
+                        }
+                    }
+                }
+            }
 
             // Bengali Question Decoder Box (for Twisted / Indirect Questions)
             feedback.decoderNoteBn?.takeIf { it.isNotBlank() }?.let { decoder ->

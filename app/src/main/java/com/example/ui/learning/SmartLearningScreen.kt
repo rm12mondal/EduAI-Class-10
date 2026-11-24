@@ -43,8 +43,10 @@ import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.Quiz
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Stop
@@ -104,6 +106,7 @@ import com.example.ui.chat.DiagramGeneratingBanner
 import com.example.ui.chat.FullScreenDiagramDialog
 import com.example.ui.chat.GeneratedDiagramCard
 import com.example.ui.chat.rememberVoiceInputLauncher
+import com.example.ui.master.TopperAnswerFormatToggleBlock
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
@@ -148,6 +151,8 @@ fun SmartLearningScreen(
     onToggleMemorizerRevealStep: (Int) -> Unit,
     onCloseSmartMemorizer: () -> Unit,
     onToggleSpeak: (Long, String) -> Unit,
+    onOpenAudioRevision: () -> Unit,
+    onExportPdf: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onShowSnackbar: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -287,6 +292,35 @@ fun SmartLearningScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                        }
+
+                        Surface(
+                            onClick = onOpenAudioRevision,
+                            shape = RoundedCornerShape(999.dp),
+                            color = Color(0xFF0E7490).copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, Color(0xFF0E7490).copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("smart_learning_audio_revision_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Headphones,
+                                    contentDescription = "Hands-free Audio Revision",
+                                    tint = Color(0xFF0E7490),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "অডিও",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF0E7490),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
 
                         Row(
@@ -539,6 +573,16 @@ fun SmartLearningScreen(
                                 onCopy = {
                                     clipboard.setText(AnnotatedString(msg.content))
                                     onShowSnackbar(copiedMsg)
+                                },
+                                onExportPdf = {
+                                    val subjName = msg.subject?.bengaliName ?: "স্মার্ট_লার্নিং"
+                                    val ch = msg.chapterName ?: "অধ্যায়_নোট"
+                                    onExportPdf(
+                                        "${subjName}_${ch}",
+                                        "$subjName — স্মার্ট লার্নিং নোটস",
+                                        msg.chapterName ?: msg.sourceLabel,
+                                        msg.content
+                                    )
                                 },
                                 onZoomImage = { path -> zoomedImagePath = path },
                                 onGenerateDiagram = { onGenerateDiagramForMessage(msg) },
@@ -825,6 +869,7 @@ private fun SmartLearningMessageCard(
     isBusyOverlay: Boolean,
     onSpeak: () -> Unit,
     onCopy: () -> Unit,
+    onExportPdf: () -> Unit,
     onZoomImage: (String) -> Unit,
     onGenerateDiagram: () -> Unit,
     onStartTwoMinQuiz: () -> Unit,
@@ -905,12 +950,19 @@ private fun SmartLearningMessageCard(
                     }
                 }
 
-                // Explanation Text
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                )
+                // Explanation Text (with Topper Answer Format Toggle for assistant responses)
+                if (!isUser) {
+                    TopperAnswerFormatToggleBlock(
+                        rawAnswer = message.content,
+                        subject = message.subject
+                    )
+                } else {
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
 
                 // On-demand diagram progress
                 if (message.isGeneratingDiagram) {
@@ -991,6 +1043,34 @@ private fun SmartLearningMessageCard(
                                     modifier = Modifier.size(15.dp)
                                 )
                                 Text("কপি", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        Surface(
+                            onClick = onExportPdf,
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFC62828).copy(alpha = 0.11f),
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("sl_pdf_export_${message.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PictureAsPdf,
+                                    contentDescription = "Save as PDF",
+                                    tint = Color(0xFFC62828),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "PDF",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFC62828),
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 

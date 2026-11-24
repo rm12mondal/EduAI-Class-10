@@ -13,9 +13,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChatMessageEntity::class,
         ExamAttemptEntity::class,
         TopperSetProgressEntity::class,
-        TopperMistakeEntity::class
+        TopperMistakeEntity::class,
+        DailyPlanTaskEntity::class,
+        StudyStreakEntity::class,
+        BrahmastramProgressEntity::class,
+        SpacedRevisionEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class EduAiDatabase : RoomDatabase() {
@@ -23,6 +27,8 @@ abstract class EduAiDatabase : RoomDatabase() {
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun examAttemptDao(): ExamAttemptDao
     abstract fun topperDao(): TopperDao
+    abstract fun dailyPlannerDao(): DailyPlannerDao
+    abstract fun masterUpgradeDao(): MasterUpgradeDao
 
     companion object {
         @Volatile
@@ -102,6 +108,73 @@ abstract class EduAiDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `daily_plan_tasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `dateStamp` TEXT NOT NULL,
+                        `targetHours` INTEGER NOT NULL,
+                        `subjectId` TEXT NOT NULL,
+                        `titleBn` TEXT NOT NULL,
+                        `detailBn` TEXT NOT NULL,
+                        `durationMinutes` INTEGER NOT NULL,
+                        `actionType` TEXT NOT NULL,
+                        `isCompleted` INTEGER NOT NULL,
+                        `orderIndex` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `study_streak` (
+                        `id` INTEGER PRIMARY KEY NOT NULL,
+                        `currentStreak` INTEGER NOT NULL,
+                        `longestStreak` INTEGER NOT NULL,
+                        `lastCompletedDateStamp` TEXT NOT NULL,
+                        `totalTasksCompleted` INTEGER NOT NULL,
+                        `selectedDailyHours` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `brahmastram_progress` (
+                        `subjectId` TEXT PRIMARY KEY NOT NULL,
+                        `completedNoteIdsCsv` TEXT NOT NULL,
+                        `totalNotesCount` INTEGER NOT NULL,
+                        `lastExamScore` REAL NOT NULL,
+                        `lastExamMaxMarks` REAL NOT NULL,
+                        `examsTakenCount` INTEGER NOT NULL,
+                        `lastUpdatedMs` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `spaced_revision_items` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `subjectId` TEXT NOT NULL,
+                        `chapterName` TEXT NOT NULL,
+                        `topicTitle` TEXT NOT NULL,
+                        `keySummary` TEXT NOT NULL,
+                        `sourceType` TEXT NOT NULL,
+                        `intervalDays` INTEGER NOT NULL,
+                        `masteryStage` INTEGER NOT NULL,
+                        `lastReviewedAtMs` INTEGER NOT NULL,
+                        `nextReviewAtMs` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: Context): EduAiDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -109,7 +182,13 @@ abstract class EduAiDatabase : RoomDatabase() {
                     EduAiDatabase::class.java,
                     "eduai_class10_wbbse.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6
+                    )
                     .build()
                     .also { INSTANCE = it }
             }

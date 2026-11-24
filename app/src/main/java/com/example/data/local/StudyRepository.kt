@@ -6,7 +6,9 @@ class StudyRepository(
     private val masterDataDao: MasterDataDao,
     private val chatMessageDao: ChatMessageDao,
     private val examAttemptDao: ExamAttemptDao,
-    private val topperDao: TopperDao
+    private val topperDao: TopperDao,
+    private val dailyPlannerDao: DailyPlannerDao,
+    private val masterUpgradeDao: MasterUpgradeDao
 ) {
     val allMasterNotes: Flow<List<MasterDataEntity>> = masterDataDao.observeAll()
     val allChatMessages: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAllMessages()
@@ -14,6 +16,11 @@ class StudyRepository(
     val allExamAttempts: Flow<List<ExamAttemptEntity>> = examAttemptDao.observeAllAttempts()
     val allTopperSetProgress: Flow<List<TopperSetProgressEntity>> = topperDao.observeAllSetProgress()
     val activeTopperMistakes: Flow<List<TopperMistakeEntity>> = topperDao.observeActiveMistakes()
+    val studyStreak: Flow<StudyStreakEntity?> = dailyPlannerDao.observeStreak()
+    val allBrahmastramProgress: Flow<List<BrahmastramProgressEntity>> =
+        masterUpgradeDao.observeAllBrahmastramProgress()
+    val allSpacedRevisions: Flow<List<SpacedRevisionEntity>> =
+        masterUpgradeDao.observeAllRevisions()
 
     suspend fun ensureSeeded() {
         val targetRecords = WbbseMasterDataSeed.createInitialRecords()
@@ -104,5 +111,137 @@ class StudyRepository(
     suspend fun clearTopperProgress() {
         topperDao.clearSetProgress()
         topperDao.clearMistakes()
+    }
+
+    fun observeDailyPlanTasks(dateStamp: String): Flow<List<DailyPlanTaskEntity>> =
+        dailyPlannerDao.observeTasksForDate(dateStamp)
+
+    suspend fun getDailyPlanTasks(dateStamp: String): List<DailyPlanTaskEntity> =
+        dailyPlannerDao.getTasksForDate(dateStamp)
+
+    suspend fun replaceDailyPlanTasks(dateStamp: String, tasks: List<DailyPlanTaskEntity>) {
+        dailyPlannerDao.clearTasksForDate(dateStamp)
+        if (tasks.isNotEmpty()) {
+            dailyPlannerDao.insertTasks(tasks)
+        }
+    }
+
+    suspend fun setDailyTaskCompleted(taskId: Long, completed: Boolean) {
+        dailyPlannerDao.updateTaskCompleted(taskId, completed)
+    }
+
+    suspend fun getStudyStreak(): StudyStreakEntity =
+        dailyPlannerDao.getStreak() ?: StudyStreakEntity()
+
+    suspend fun saveStudyStreak(streak: StudyStreakEntity) {
+        dailyPlannerDao.upsertStreak(streak)
+    }
+
+    // ==================== Brahmastram & Spaced Repetition ====================
+
+    suspend fun getBrahmastramProgress(subjectId: String): BrahmastramProgressEntity? =
+        masterUpgradeDao.getBrahmastramProgress(subjectId)
+
+    suspend fun upsertBrahmastramProgress(progress: BrahmastramProgressEntity) =
+        masterUpgradeDao.upsertBrahmastramProgress(progress)
+
+    suspend fun scheduleOrTouchSpacedRevision(
+        subjectId: String,
+        chapterName: String,
+        topicTitle: String,
+        keySummary: String,
+        sourceType: String,
+        makeImmediatelyDue: Boolean = false
+    ) {
+        val now = System.currentTimeMillis()
+        val existing = masterUpgradeDao.findRevisionByTopic(subjectId, topicTitle)
+        if (existing != null) {
+            val nextReview = if (makeImmediatelyDue) now else existing.nextReviewAtMs
+            masterUpgradeDao.upsertRevision(
+                existing.copy(
+                    keySummary = keySummary.ifBlank { existing.keySummary },
+                    sourceType = if (sourceType == "MISTAKE") "MISTAKE" else existing.sourceType,
+                    nextReviewAtMs = nextReview
+                )
+            )
+        } else {
+            val firstDue = if (makeImmediatelyDue) now else now + (3L * 24L * 60L * 60L * 1000L)
+            masterUpgradeDao.upsertRevision(
+                SpacedRevisionEntity(
+                    subjectId = subjectId,
+                    chapterName = chapterName,
+                    topicTitle = topicTitle,
+                    keySummary = keySummary,
+                    sourceType = sourceType,
+                    intervalDays = 3,
+                    masteryStage = 0,
+                    lastReviewedAtMs = now,
+                    nextReviewAtMs = firstDue
+                )
+            )
+        }
+    }
+
+    suspend fun completeSpacedRevisionReview(item: SpacedRevisionEntity) {
+        val now = System.currentTimeMillis()
+        val nextStage = (item.masteryStage + 1).coerceAtMost(3)
+        val nextIntervalDays = when (nextStage) {
+            1 -> 7
+            2 -> 21
+            else -> 30
+        }
+        val nextDue = now + (nextIntervalDays.toLong() * 24L * 60L * 60L * 1000L)
+        masterUpgradeDao.upsertRevision(
+            item.copy(
+                masteryStage = nextStage,
+                intervalDays = nextIntervalDays,
+                lastReviewedAtMs = now,
+                nextReviewAtMs = nextDue
+            )
+        )
+    }
+
+    suspend fun getAllRevisionsSnapshot(): List<SpacedRevisionEntity> =
+        masterUpgradeDao.getAllRevisionsSnapshot()
+
+    // ==================== Full Progress Backup & Restore Snapshots ====================
+
+    suspend fun getBackupExamAttempts(): List<ExamAttemptEntity> = examAttemptDao.getAllAttemptsSnapshot()
+    suspend fun getBackupTopperProgress(): List<TopperSetProgressEntity> = topperDao.getAllSetProgressSnapshot()
+    suspend fun getBackupTopperMistakes(): List<TopperMistakeEntity> = topperDao.getAllMistakesSnapshot()
+    suspend fun getBackupDailyTasks(): List<DailyPlanTaskEntity> = dailyPlannerDao.getAllTasksSnapshot()
+    suspend fun getBackupBrahmastram(): List<BrahmastramProgressEntity> =
+        masterUpgradeDao.getAllBrahmastramProgressSnapshot()
+    suspend fun getBackupRevisions(): List<SpacedRevisionEntity> =
+        masterUpgradeDao.getAllRevisionsSnapshot()
+
+    suspend fun restoreFullProgressBackup(
+        examAttempts: List<ExamAttemptEntity>,
+        topperProgress: List<TopperSetProgressEntity>,
+        topperMistakes: List<TopperMistakeEntity>,
+        streak: StudyStreakEntity?,
+        dailyTasks: List<DailyPlanTaskEntity>,
+        brahmastramProgress: List<BrahmastramProgressEntity>,
+        spacedRevisions: List<SpacedRevisionEntity>
+    ) {
+        examAttemptDao.clearAllAttempts()
+        if (examAttempts.isNotEmpty()) examAttemptDao.insertAttempts(examAttempts)
+
+        topperDao.clearSetProgress()
+        if (topperProgress.isNotEmpty()) topperDao.insertSetProgressList(topperProgress)
+
+        topperDao.clearMistakes()
+        if (topperMistakes.isNotEmpty()) topperDao.insertMistakes(topperMistakes)
+
+        if (streak != null) dailyPlannerDao.upsertStreak(streak)
+
+        dailyPlannerDao.clearAllTasks()
+        if (dailyTasks.isNotEmpty()) dailyPlannerDao.insertTasks(dailyTasks)
+
+        masterUpgradeDao.clearBrahmastramProgress()
+        if (brahmastramProgress.isNotEmpty()) masterUpgradeDao.insertBrahmastramProgressList(brahmastramProgress)
+
+        masterUpgradeDao.clearRevisions()
+        if (spacedRevisions.isNotEmpty()) masterUpgradeDao.insertRevisions(spacedRevisions)
     }
 }

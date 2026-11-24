@@ -33,6 +33,7 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var lastUtteranceIdForCurrentMessage: String? = null
     private var cachedVoiceByName: Map<String, Voice> = emptyMap()
+    private var completionCallback: (() -> Unit)? = null
 
     private val _state = MutableStateFlow(TtsUiState())
     val state: StateFlow<TtsUiState> = _state.asStateFlow()
@@ -48,17 +49,22 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
 
                 override fun onDone(utteranceId: String?) {
                     if (utteranceId == lastUtteranceIdForCurrentMessage) {
+                        val callback = completionCallback
+                        completionCallback = null
                         _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
+                        callback?.invoke()
                     }
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
+                    completionCallback = null
                     _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
                     Log.w(TAG, "TTS utterance error code=$errorCode for $utteranceId")
+                    completionCallback = null
                     _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
                 }
             })
@@ -182,7 +188,37 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
         )
     }
 
+    /**
+     * Plays an audio revision track with custom [speedOverride] (e.g., 0.8x, 1.0x, 1.25x)
+     * and invokes [onComplete] automatically when finished for continuous podcast-style listening.
+     */
+    fun speakRevisionTrack(
+        trackMessageId: Long,
+        rawText: String,
+        settings: TtsVoiceSettings,
+        speedOverride: Float,
+        onComplete: () -> Unit
+    ): Boolean {
+        val engine = tts ?: return false
+        if (!_state.value.isEngineReady) return false
+
+        val cleaned = sanitizeForSpeech(rawText)
+        if (cleaned.isBlank()) return false
+
+        val isBengali = detectBengaliScript(cleaned)
+        val effectiveSettings = settings.copy(speechRate = speedOverride.coerceIn(0.7f, 1.5f))
+        return speakInternal(
+            engine = engine,
+            messageId = trackMessageId,
+            cleanedText = cleaned,
+            preferBengali = isBengali,
+            settings = effectiveSettings,
+            onComplete = onComplete
+        )
+    }
+
     fun stop() {
+        completionCallback = null
         tts?.stop()
         lastUtteranceIdForCurrentMessage = null
         _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
@@ -199,7 +235,8 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
         messageId: Long,
         cleanedText: String,
         preferBengali: Boolean,
-        settings: TtsVoiceSettings
+        settings: TtsVoiceSettings,
+        onComplete: (() -> Unit)? = null
     ): Boolean {
         val appliedLocaleTag = applyVoiceOrLocale(
             engine = engine,
@@ -213,9 +250,11 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
         val chunks = splitIntoChunks(cleanedText, maxChunkChars = 900)
         if (chunks.isEmpty()) return false
 
+        completionCallback = null
         engine.stop()
         val lastId = "msg_${messageId}_chunk_${chunks.lastIndex}"
         lastUtteranceIdForCurrentMessage = lastId
+        completionCallback = onComplete
         _state.update {
             it.copy(
                 speakingMessageId = messageId,

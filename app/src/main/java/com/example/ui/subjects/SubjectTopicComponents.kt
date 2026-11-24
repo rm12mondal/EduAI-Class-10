@@ -24,8 +24,10 @@ import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.ViewList
@@ -62,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.local.MasterDataEntity
 import com.example.data.local.TopicImportance
+import com.example.data.master.StrictWbbsePrecisionEngine
 import com.example.model.WbbseSubject
 import com.example.ui.theme.MonoFontFamily
 
@@ -297,6 +300,8 @@ internal fun ChapterAccordionCard(
     onToggleExpand: () -> Unit,
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
     onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
+    onOpenAudioRevision: () -> Unit,
+    onExportNotePdf: (MasterDataEntity) -> Unit = {},
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onDeleteCustomNote: (Long) -> Unit
 ) {
@@ -383,6 +388,20 @@ internal fun ChapterAccordionCard(
                     }
                 }
 
+                IconButton(
+                    onClick = onOpenAudioRevision,
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("chapter_audio_revision_btn_${group.chapterOrder}_$chapterIndex")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Headphones,
+                        contentDescription = "Listen Audio Revision",
+                        tint = Color(0xFF0E7490),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
                 Icon(
                     imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     contentDescription = if (isExpanded) "Collapse chapter" else "Expand chapter",
@@ -399,6 +418,27 @@ internal fun ChapterAccordionCard(
                         .padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    FilledTonalButton(
+                        onClick = onOpenAudioRevision,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = Color(0xFF0E7490).copy(alpha = 0.13f),
+                            contentColor = Color(0xFF0E7490)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .minimumInteractiveComponentSize()
+                    ) {
+                        Icon(Icons.Rounded.Headphones, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "হ্যান্ডস-ফ্রি অডিও রিভিশন শুনুন (পডকাস্ট মোড)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     group.topics.forEach { note ->
                         MasterNoteCard(
                             note = note,
@@ -407,6 +447,7 @@ internal fun ChapterAccordionCard(
                             showChapterLabel = false,
                             onAskTutor = { onAskTutorFromNote(note) },
                             onOpenSmartLearning = { onOpenSmartLearningForNote(note) },
+                            onExportPdf = { onExportNotePdf(note) },
                             onToggleBookmark = { onToggleBookmark(note) },
                             onDeleteCustom = if (note.isUserCreated) {
                                 { onDeleteCustomNote(note.id) }
@@ -429,9 +470,18 @@ internal fun MasterNoteCard(
     showChapterLabel: Boolean = true,
     onAskTutor: () -> Unit,
     onOpenSmartLearning: () -> Unit,
+    onExportPdf: () -> Unit = {},
     onToggleBookmark: () -> Unit,
     onDeleteCustom: (() -> Unit)?
 ) {
+    val pyqTrend = remember(note.subjectId, note.chapterName, note.topicTitle, note.importanceLevel) {
+        StrictWbbsePrecisionEngine.getPyqTrend(
+            subjectId = note.subjectId,
+            chapterName = note.chapterName,
+            topicTitle = note.topicTitle,
+            importanceLevel = note.importanceLevel
+        )
+    }
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -470,6 +520,27 @@ internal fun MasterNoteCard(
                         }
                     }
 
+                    if (pyqTrend.isHotTopic || pyqTrend.yearsBadge.isNotBlank()) {
+                        Surface(
+                            color = if (pyqTrend.isHotTopic) Color(0xFFE65100).copy(alpha = 0.13f) else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
+                                0.8.dp,
+                                if (pyqTrend.isHotTopic) Color(0xFFE65100).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+                            )
+                        ) {
+                            Text(
+                                text = "${pyqTrend.yearsBadge} • ${pyqTrend.probabilityBadge}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (pyqTrend.isHotTopic) Color(0xFFBF360C) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
                     if (showChapterLabel) {
                         Text(
                             text = note.chapterName,
@@ -488,6 +559,16 @@ internal fun MasterNoteCard(
                 }
 
                 Row {
+                    IconButton(
+                        onClick = onExportPdf,
+                        modifier = Modifier.testTag("note_pdf_export_${note.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PictureAsPdf,
+                            contentDescription = "Save note as PDF",
+                            tint = Color(0xFFC62828)
+                        )
+                    }
                     if (onDeleteCustom != null) {
                         IconButton(onClick = onDeleteCustom) {
                             Icon(

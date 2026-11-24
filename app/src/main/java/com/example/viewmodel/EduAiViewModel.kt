@@ -15,6 +15,7 @@ import com.example.data.ai.SmartLearningService
 import com.example.data.gguf.GgufManagerState
 import com.example.data.gguf.GgufModelManager
 import com.example.data.local.ChatMessageEntity
+import com.example.data.local.DailyPlanTaskEntity
 import com.example.data.local.EduAiDatabase
 import com.example.data.local.ExamAttemptEntity
 import com.example.data.local.MasterDataEntity
@@ -26,23 +27,49 @@ import com.example.data.speech.EduTtsManager
 import com.example.data.speech.TtsUiState
 import com.example.model.ActiveExamSession
 import com.example.model.AppTab
+import com.example.model.AudioRevisionUiState
 import com.example.model.ChatPromptOptions
+import com.example.model.DailyPlannerUiState
 import com.example.model.ExamChatIntent
 import com.example.model.ExamChatMessage
 import com.example.model.ExamFormat
 import com.example.model.ExamSessionMode
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
+import com.example.model.MapBoardDomain
+import com.example.model.MapBoardUiState
 import com.example.model.OverallProgressStats
+import com.example.model.PlanActionType
+import com.example.model.RapidFireTimerMode
+import com.example.model.RapidFireUiState
 import com.example.model.SmartLearningMessage
 import com.example.model.SmartLearningUiState
 import com.example.model.SubjectProgressSummary
 import com.example.model.SubjectiveEvaluationResult
 import com.example.model.TimingBucket
+import com.example.data.local.SpacedRevisionEntity
+import com.example.data.master.StrictWbbsePrecisionEngine
+import com.example.data.pdf.SavedPdfItem
+import com.example.model.AiVivaUiState
+import com.example.model.BrahmastramUiState
+import com.example.model.ConfusionCleanerUiState
+import com.example.model.DiagramLabUiState
+import com.example.model.LanguageLabMode
+import com.example.model.LanguageLabUiState
+import com.example.model.MathSolverModule
+import com.example.model.MathSolverUiState
+import com.example.model.PocketBookCategory
+import com.example.model.PocketBookUiState
+import com.example.model.SavedPdfLibraryUiState
+import com.example.model.ScorePredictorSummary
+import com.example.model.SpacedRevisionUiState
 import com.example.model.TopperSectionType
 import com.example.model.TopperSubjectTrack
 import com.example.model.TtsVoiceSettings
 import com.example.model.WbbseSubject
+import com.example.model.WritingFormatType
+import com.example.model.WritingLanguage
+import com.example.model.WritingStudioUiState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -104,6 +131,7 @@ data class EduAiUiState(
     val ttsVoiceSettings: TtsVoiceSettings = TtsVoiceSettings(),
     val examAttempts: List<ExamAttemptEntity> = emptyList(),
     val progressStats: OverallProgressStats = computeProgressStats(emptyList()),
+    val scorePredictor: ScorePredictorSummary = StrictWbbsePrecisionEngine.computeScorePredictor(emptyList()),
     val selectedExamSubject: WbbseSubject = WbbseSubject.PHYSICAL_SCIENCE,
     val selectedExamFormat: ExamFormat = ExamFormat.MCQ,
     val isEvaluatingExam: Boolean = false,
@@ -142,7 +170,9 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         masterDataDao = database.masterDataDao(),
         chatMessageDao = database.chatMessageDao(),
         examAttemptDao = database.examAttemptDao(),
-        topperDao = database.topperDao()
+        topperDao = database.topperDao(),
+        dailyPlannerDao = database.dailyPlannerDao(),
+        masterUpgradeDao = database.masterUpgradeDao()
     )
     private val settingsDataStore = SettingsDataStore(application)
     private val ggufModelManager = GgufModelManager(application)
@@ -176,6 +206,43 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val smartLearningState: StateFlow<SmartLearningUiState> = smartLearningController.uiState
+
+    private val topperExtrasController = TopperExtrasController(
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        ggufModelManager = ggufModelManager,
+        ttsManager = ttsManager,
+        getCurrentVoiceSettings = { uiState.value.ttsVoiceSettings },
+        getCurrentInferenceMode = { uiState.value.inferenceMode }
+    )
+
+    val plannerState: StateFlow<DailyPlannerUiState> = topperExtrasController.plannerState
+    val mapBoardState: StateFlow<MapBoardUiState> = topperExtrasController.mapBoardState
+    val rapidFireState: StateFlow<RapidFireUiState> = topperExtrasController.rapidFireState
+    val audioRevisionState: StateFlow<AudioRevisionUiState> = topperExtrasController.audioRevisionState
+
+    private val masterUpgradeController = MasterUpgradeController(
+        appContext = appContext,
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        ggufModelManager = ggufModelManager,
+        ttsManager = ttsManager,
+        getMasterNotes = { uiState.value.masterNotes },
+        getInferenceMode = { uiState.value.inferenceMode },
+        getVoiceSettings = { uiState.value.ttsVoiceSettings }
+    )
+
+    val pdfState: StateFlow<SavedPdfLibraryUiState> = masterUpgradeController.pdfState
+    val brahmastramState: StateFlow<BrahmastramUiState> = masterUpgradeController.brahmastramState
+    val pocketBookState: StateFlow<PocketBookUiState> = masterUpgradeController.pocketBookState
+    val vivaState: StateFlow<AiVivaUiState> = masterUpgradeController.vivaState
+    val confusionState: StateFlow<ConfusionCleanerUiState> = masterUpgradeController.confusionState
+    val spacedRevisionState: StateFlow<SpacedRevisionUiState> = masterUpgradeController.spacedRevisionState
+    val diagramLabState: StateFlow<DiagramLabUiState> = masterUpgradeController.diagramLabState
+    val writingStudioState: StateFlow<WritingStudioUiState> = masterUpgradeController.writingStudioState
+    val languageLabState: StateFlow<LanguageLabUiState> = masterUpgradeController.languageLabState
+    val mathSolverState: StateFlow<MathSolverUiState> = masterUpgradeController.mathSolverState
+    val backupStatusMessage: StateFlow<String?> = masterUpgradeController.backupStatusMessage
 
     private val localState = MutableStateFlow(LocalUiNavigationState())
     private var generationJob: Job? = null
@@ -227,6 +294,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             ttsVoiceSettings = data.settings.ttsSettings,
             examAttempts = extra.attempts,
             progressStats = computeProgressStats(extra.attempts),
+            scorePredictor = StrictWbbsePrecisionEngine.computeScorePredictor(extra.attempts),
             selectedExamSubject = nav.selectedExamSubject,
             selectedExamFormat = nav.selectedExamFormat,
             isEvaluatingExam = nav.isEvaluatingExam,
@@ -244,6 +312,9 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             studyRepository.ensureSeeded()
+            val allNotesSnapshot = studyRepository.getMasterDataSnapshot(null)
+            topperExtrasController.ensureTodayPlanInitialized(allNotesSnapshot)
+            masterUpgradeController.ensureSpacedRevisionSeeded(allNotesSnapshot)
             val stored = settingsDataStore.settingsFlow.first()
             val detectedPath = ggufModelManager.scanAndAutoDetect(
                 savedActivePath = stored.activeModelPath,
@@ -259,6 +330,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         examHallTimerJob?.cancel()
         topperController.stopTimer()
         smartLearningController.stopAll()
+        topperExtrasController.stopAll()
+        masterUpgradeController.stopAll()
         ttsManager.shutdown()
         super.onCleared()
     }
@@ -1039,6 +1112,129 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         smartLearningController.closeSmartMemorizer()
     }
 
+    // ==================== 4 Topper-Making Upgrades (Daily Plan, Map Board, Rapid Fire, Audio Revision) ====================
+
+    fun setDailyPlannerSheetOpen(open: Boolean) = topperExtrasController.setPlannerSheetOpen(open)
+
+    fun generateDailyPlan(hours: Int) =
+        topperExtrasController.generateNewDailyPlan(hours, uiState.value.masterNotes)
+
+    fun toggleDailyPlanTask(task: DailyPlanTaskEntity) =
+        topperExtrasController.toggleDailyTaskCompleted(task)
+
+    fun launchDailyPlanTask(task: DailyPlanTaskEntity) {
+        val subj = WbbseSubject.fromId(task.subjectId)
+        when (task.actionType) {
+            PlanActionType.SMART_LEARNING -> {
+                openSmartLearning(subject = subj)
+            }
+
+            PlanActionType.MAP_BOARD -> {
+                val domain = if (subj == WbbseSubject.HISTORY) {
+                    MapBoardDomain.HISTORY
+                } else {
+                    MapBoardDomain.GEOGRAPHY
+                }
+                openMapBoard(domain)
+            }
+
+            PlanActionType.RAPID_FIRE -> {
+                openRapidFire(subj)
+            }
+
+            PlanActionType.TOPPER_CAPSULE -> {
+                val track = TopperSubjectTrack.entries.firstOrNull { it.linkedSubject == subj }
+                    ?: TopperSubjectTrack.PHYSICAL_SCIENCE
+                selectTab(AppTab.TOPPER)
+                start15MinOfflineCapsule(track)
+            }
+
+            else -> {
+                selectTab(AppTab.SUBJECTS)
+                if (subj != null) openSubjectDetail(subj)
+            }
+        }
+    }
+
+    fun openMapBoard(domain: MapBoardDomain) {
+        ttsManager.stop()
+        topperExtrasController.openMapBoard(domain)
+    }
+
+    fun switchMapBoardDomain(domain: MapBoardDomain) =
+        topperExtrasController.switchMapBoardDomain(domain)
+
+    fun closeMapBoard() = topperExtrasController.closeMapBoard()
+
+    fun openRapidFire(subject: WbbseSubject? = null) {
+        ttsManager.stop()
+        topperExtrasController.openRapidFire(subject)
+    }
+
+    fun closeRapidFire() = topperExtrasController.closeRapidFire()
+
+    fun selectRapidFireSubject(subject: WbbseSubject?) =
+        topperExtrasController.updateRapidFireSetup(subject = subject)
+
+    fun selectRapidFireQuestionCount(count: Int) =
+        topperExtrasController.updateRapidFireSetup(questionCount = count)
+
+    fun selectRapidFireTimerMode(mode: RapidFireTimerMode) =
+        topperExtrasController.updateRapidFireSetup(timerMode = mode)
+
+    fun startRapidFireDrill() =
+        topperExtrasController.startRapidFire(uiState.value.masterNotes)
+
+    fun answerRapidFireOption(optionIndex: Int) =
+        topperExtrasController.answerRapidFireOption(optionIndex)
+
+    fun advanceRapidFireNext() = topperExtrasController.advanceRapidFireNext()
+
+    fun finishRapidFireEarly() = topperExtrasController.finishRapidFireEarly()
+
+    fun openMistakeRecoveryFromRapidFire() {
+        topperExtrasController.closeRapidFire()
+        selectTab(AppTab.TOPPER)
+        startMistakeRecoveryTest(null)
+    }
+
+    fun openAudioRevisionForChapter(subject: WbbseSubject, chapterName: String) {
+        val chapterNotes = uiState.value.masterNotes.filter {
+            it.subjectId == subject.id && it.chapterName == chapterName
+        }
+        topperExtrasController.openAudioRevisionForChapter(
+            subject = subject,
+            chapterName = chapterName,
+            chapterNotes = chapterNotes
+        )
+    }
+
+    fun openAudioRevisionForSubject(subject: WbbseSubject) {
+        val subjectNotes = uiState.value.masterNotes.filter { it.subjectId == subject.id }
+        topperExtrasController.openAudioRevisionForSubject(
+            subject = subject,
+            subjectNotes = subjectNotes
+        )
+    }
+
+    fun openAudioRevisionForSmartLearning() {
+        val sl = smartLearningState.value
+        topperExtrasController.openAudioRevisionForSmartLearning(
+            subject = sl.selectedSubject,
+            chapterName = sl.selectedChapter,
+            messages = sl.messages,
+            masterNotes = uiState.value.masterNotes
+        )
+    }
+
+    fun toggleAudioRevisionPlayPause() = topperExtrasController.toggleAudioPlayPause()
+    fun nextAudioRevisionTrack() = topperExtrasController.nextAudioTrack()
+    fun previousAudioRevisionTrack() = topperExtrasController.previousAudioTrack()
+    fun selectAudioRevisionTrack(index: Int) = topperExtrasController.selectAudioTrack(index)
+    fun setAudioRevisionSpeed(speed: Float) = topperExtrasController.setAudioPlaybackSpeed(speed)
+    fun toggleAudioRevisionAutoAdvance() = topperExtrasController.toggleAudioAutoAdvance()
+    fun closeAudioRevision() = topperExtrasController.closeAudioRevision()
+
     // ==================== Offline Exam Bank & Score Tracker ====================
 
     fun selectExamSubject(subject: WbbseSubject) {
@@ -1304,6 +1500,89 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissModelStatusBanner() {
         ggufModelManager.clearStatusBanner()
     }
+
+    // ==================== 19-Feature Master Upgrade Delegates ====================
+
+    // A. Universal Offline PDF Generator & Saved Library
+    fun requestPdfExport(suggestedName: String, title: String, subtitle: String, bodyContent: String) =
+        masterUpgradeController.requestPdfExport(suggestedName, title, subtitle, bodyContent)
+    fun dismissPdfExportDialog() = masterUpgradeController.dismissPdfExportDialog()
+    fun confirmGeneratePdf(customFileName: String) = masterUpgradeController.confirmGeneratePdf(customFileName)
+    fun openSavedPdfLibrary() = masterUpgradeController.openSavedPdfLibrary()
+    fun closeSavedPdfLibrary() = masterUpgradeController.closeSavedPdfLibrary()
+    fun refreshSavedPdfs() = masterUpgradeController.refreshSavedPdfs()
+    fun renameSavedPdf(item: SavedPdfItem, newName: String) = masterUpgradeController.renameSavedPdf(item, newName)
+    fun deleteSavedPdf(item: SavedPdfItem) = masterUpgradeController.deleteSavedPdf(item)
+    fun clearPdfStatusMessage() = masterUpgradeController.clearPdfStatusMessage()
+
+    // B. Offline Backup & Restore
+    fun exportProgressBackup(uri: Uri) = masterUpgradeController.exportProgressBackup(uri)
+    fun importProgressBackup(uri: Uri) = masterUpgradeController.importProgressBackup(uri)
+    fun clearBackupStatus() = masterUpgradeController.clearBackupStatus()
+
+    // 4. Brahmastram
+    fun openBrahmastram(subject: WbbseSubject = WbbseSubject.PHYSICAL_SCIENCE) =
+        masterUpgradeController.openBrahmastram(subject)
+    fun closeBrahmastram() = masterUpgradeController.closeBrahmastram()
+    fun selectBrahmastramSubject(subject: WbbseSubject) = masterUpgradeController.selectBrahmastramSubject(subject)
+    fun regenerateBrahmastramNotes() = masterUpgradeController.generateBrahmastramNotes()
+    fun toggleBrahmastramNoteCompleted(noteId: String) = masterUpgradeController.toggleBrahmastramNoteCompleted(noteId)
+    fun startBrahmastramExam() = masterUpgradeController.startBrahmastramExam()
+    fun selectBrahmastramMcqOption(questionId: String, optionIdx: Int) =
+        masterUpgradeController.selectBrahmastramMcqOption(questionId, optionIdx)
+    fun updateBrahmastramTypedAnswer(questionId: String, text: String) =
+        masterUpgradeController.updateBrahmastramTypedAnswer(questionId, text)
+    fun submitBrahmastramExam() = masterUpgradeController.submitBrahmastramExam()
+    fun returnToBrahmastramNotes() = masterUpgradeController.returnToBrahmastramNotes()
+
+    // 5. Pocket Book
+    fun openPocketBook(category: PocketBookCategory = PocketBookCategory.MATH_FORMULAS) =
+        masterUpgradeController.openPocketBook(category)
+    fun selectPocketBookCategory(category: PocketBookCategory) = masterUpgradeController.selectPocketBookCategory(category)
+    fun updatePocketBookSearch(q: String) = masterUpgradeController.updatePocketBookSearch(q)
+    fun closePocketBook() = masterUpgradeController.closePocketBook()
+
+    // 6. AI Viva Oral Tutor
+    fun openAiViva(subject: WbbseSubject, chapterName: String = "") =
+        masterUpgradeController.openAiViva(subject, chapterName)
+    fun speakCurrentVivaQuestion() = masterUpgradeController.speakCurrentVivaQuestion()
+    fun submitVivaAnswer(answer: String) = masterUpgradeController.submitVivaAnswer(answer)
+    fun closeAiViva() = masterUpgradeController.closeAiViva()
+
+    // 8. Confusion Cleaner
+    fun openConfusionCleaner(subject: WbbseSubject) = masterUpgradeController.openConfusionCleaner(subject)
+    fun closeConfusionCleaner() = masterUpgradeController.closeConfusionCleaner()
+
+    // 9. Spaced Repetition Capsule
+    fun markSpacedRevisionCompleted(item: SpacedRevisionEntity) =
+        masterUpgradeController.markSpacedRevisionCompleted(item)
+
+    // 15. Interactive Science Diagram Labelling
+    fun openDiagramLab(subject: WbbseSubject) = masterUpgradeController.openDiagramLab(subject)
+    fun switchDiagramLabSubject(subject: WbbseSubject) = masterUpgradeController.switchDiagramLabSubject(subject)
+    fun selectDiagramIndex(index: Int) = masterUpgradeController.selectDiagramIndex(index)
+    fun closeDiagramLab() = masterUpgradeController.closeDiagramLab()
+
+    // 17. Writing Studio
+    fun openWritingStudio(language: WritingLanguage) = masterUpgradeController.openWritingStudio(language)
+    fun selectWritingFormat(format: WritingFormatType) = masterUpgradeController.selectWritingFormat(format)
+    fun updateWritingTopic(topic: String) = masterUpgradeController.updateWritingTopic(topic)
+    fun generateWritingOutput() = masterUpgradeController.generateWritingOutput()
+    fun closeWritingStudio() = masterUpgradeController.closeWritingStudio()
+
+    // 18. English & Bengali Language Mastery Labs
+    fun openLanguageLab(mode: LanguageLabMode) = masterUpgradeController.openLanguageLab(mode)
+    fun updateBengaliAnalyzerInput(text: String) = masterUpgradeController.updateBengaliAnalyzerInput(text)
+    fun runBengaliGrammarAnalyzer() = masterUpgradeController.runBengaliGrammarAnalyzer()
+    fun updateCustomUnseenInput(text: String) = masterUpgradeController.updateCustomUnseenInput(text)
+    fun solveCustomUnseenPassage() = masterUpgradeController.solveCustomUnseenPassage()
+    fun closeLanguageLab() = masterUpgradeController.closeLanguageLab()
+
+    // 19. Offline Math & Mensuration Solver
+    fun openMathSolver(module: MathSolverModule = MathSolverModule.SPHERE) =
+        masterUpgradeController.openMathSolver(module)
+    fun selectMathSolverModule(module: MathSolverModule) = masterUpgradeController.selectMathSolverModule(module)
+    fun closeMathSolver() = masterUpgradeController.closeMathSolver()
 
     private data class DataBundle(
         val settings: StoredAppSettings,

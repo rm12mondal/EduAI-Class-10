@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -116,6 +117,7 @@ fun ExamScreen(
     onClearExamChat: () -> Unit,
     onSendExamChatMessage: (String) -> Unit,
     onToggleSpeakMessage: (Long, String) -> Unit,
+    onOpenRapidFire: (WbbseSubject?) -> Unit,
     onShowSnackbar: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -145,17 +147,51 @@ fun ExamScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.exams_title),
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.exams_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.exams_title),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.exams_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Surface(
+                            onClick = { onOpenRapidFire(uiState.selectedExamSubject) },
+                            shape = RoundedCornerShape(999.dp),
+                            color = TerracottaAccent.copy(alpha = 0.14f),
+                            border = BorderStroke(1.dp, TerracottaAccent.copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("exam_header_rapid_fire_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Bolt,
+                                    contentDescription = "Rapid Fire MCQ",
+                                    tint = TerracottaAccent,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "র্যাপিড ফায়ার",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = TerracottaAccent,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
 
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -225,6 +261,7 @@ fun ExamScreen(
                     onClearExamPhoto = onClearExamPhoto,
                     onEvaluateSubjective = onEvaluateSubjective,
                     onClearEvaluation = onClearEvaluation,
+                    onOpenRapidFire = onOpenRapidFire,
                     onShowSnackbar = onShowSnackbar,
                     modifier = Modifier.weight(1f)
                 )
@@ -254,6 +291,7 @@ private fun ExamPracticeSection(
     onClearExamPhoto: () -> Unit,
     onEvaluateSubjective: (WbbseSubject, ExamFormat, String, Int, String, List<String>, String) -> Unit,
     onClearEvaluation: () -> Unit,
+    onOpenRapidFire: (WbbseSubject?) -> Unit,
     onShowSnackbar: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -261,6 +299,43 @@ private fun ExamPracticeSection(
     val format = uiState.selectedExamFormat
 
     Column(modifier = modifier.fillMaxSize()) {
+        // Rapid Fire Speed Booster Promo Strip
+        Surface(
+            onClick = { onOpenRapidFire(subject) },
+            color = TerracottaAccent.copy(alpha = 0.11f),
+            border = BorderStroke(1.dp, TerracottaAccent.copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .testTag("exam_practice_rapid_fire_banner")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Bolt,
+                    contentDescription = null,
+                    tint = TerracottaAccent,
+                    modifier = Modifier.size(22.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "⚡ র্যাপিড ফায়ার (Speed Booster — ২০/৩০ MCQ)",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TerracottaAccent,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "৩০ সেকেন্ড/প্রশ্ন বা ১৫ মিনিট টাইমার • ১০০% অফলাইন • ভুল উত্তর অটো-ভুলের খাতায় সেভ হয়",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
         // 7-Subject Selector
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),

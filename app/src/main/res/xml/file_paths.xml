@@ -6,4 +6,10 @@
     <files-path
         name="chat_uploads"
         path="chat_uploads/" />
+    <external-files-path
+        name="eduai_pdfs"
+        path="Download/EduAI_Notes/" />
+    <files-path
+        name="eduai_pdfs_internal"
+        path="EduAI_Notes/" />
 </paths>

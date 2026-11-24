@@ -23,8 +23,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Biotech
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.material.icons.rounded.CompareArrows
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Spellcheck
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -55,9 +65,14 @@ import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.local.MasterDataEntity
 import com.example.data.local.TopicImportance
+import com.example.model.LanguageLabMode
+import com.example.model.MapBoardDomain
+import com.example.model.MathSolverModule
 import com.example.model.WbbseSubject
+import com.example.model.WritingLanguage
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
+import com.example.ui.theme.TerracottaAccent
 
 @Composable
 fun SubjectsScreen(
@@ -69,6 +84,18 @@ fun SubjectsScreen(
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
     onOpenSmartLearningForSubject: (WbbseSubject?) -> Unit,
     onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
+    onOpenMapBoard: (MapBoardDomain) -> Unit,
+    onOpenRapidFire: (WbbseSubject) -> Unit,
+    onOpenAudioRevisionForSubject: (WbbseSubject) -> Unit,
+    onOpenAudioRevisionForChapter: (WbbseSubject, String) -> Unit,
+    onOpenDiagramLab: (WbbseSubject) -> Unit,
+    onOpenWritingStudio: (WritingLanguage) -> Unit,
+    onOpenLanguageLab: (LanguageLabMode) -> Unit,
+    onOpenMathSolver: (MathSolverModule) -> Unit,
+    onOpenAiViva: (WbbseSubject) -> Unit,
+    onOpenConfusionCleaner: (WbbseSubject) -> Unit,
+    onOpenPocketBook: (WbbseSubject) -> Unit,
+    onExportPdf: (String, String, String, String) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onAddCustomNote: (WbbseSubject, String, String, String, String) -> Unit,
     onDeleteCustomNote: (Long) -> Unit,
@@ -92,6 +119,18 @@ fun SubjectsScreen(
             onAskTutorFromNote = onAskTutorFromNote,
             onOpenSmartLearningForSubject = { onOpenSmartLearningForSubject(selectedSubject) },
             onOpenSmartLearningForNote = onOpenSmartLearningForNote,
+            onOpenMapBoard = onOpenMapBoard,
+            onOpenRapidFire = { onOpenRapidFire(selectedSubject) },
+            onOpenAudioRevisionForSubject = { onOpenAudioRevisionForSubject(selectedSubject) },
+            onOpenAudioRevisionForChapter = { chapter -> onOpenAudioRevisionForChapter(selectedSubject, chapter) },
+            onOpenDiagramLab = { onOpenDiagramLab(selectedSubject) },
+            onOpenWritingStudio = onOpenWritingStudio,
+            onOpenLanguageLab = onOpenLanguageLab,
+            onOpenMathSolver = onOpenMathSolver,
+            onOpenAiViva = { onOpenAiViva(selectedSubject) },
+            onOpenConfusionCleaner = { onOpenConfusionCleaner(selectedSubject) },
+            onOpenPocketBook = { onOpenPocketBook(selectedSubject) },
+            onExportPdf = onExportPdf,
             onToggleBookmark = onToggleBookmark,
             onDeleteCustomNote = onDeleteCustomNote,
             onOpenAddDialog = { showAddNoteDialog = true },
@@ -117,6 +156,7 @@ fun SubjectsScreen(
             onAskTutorFromNote = onAskTutorFromNote,
             onOpenSmartLearningForSubject = onOpenSmartLearningForSubject,
             onOpenSmartLearningForNote = onOpenSmartLearningForNote,
+            onExportPdf = onExportPdf,
             onToggleBookmark = onToggleBookmark,
             modifier = modifier
         )
@@ -132,6 +172,7 @@ private fun SubjectsOverviewList(
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
     onOpenSmartLearningForSubject: (WbbseSubject?) -> Unit,
     onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
+    onExportPdf: (String, String, String, String) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -273,6 +314,26 @@ private fun SubjectsOverviewList(
                         subjectBadge = subj.bengaliName,
                         onAskTutor = { onAskTutorFromNote(note) },
                         onOpenSmartLearning = { onOpenSmartLearningForNote(note) },
+                        onExportPdf = {
+                            onExportPdf(
+                                "${subj.bengaliName}_${note.topicTitle}",
+                                note.topicTitle,
+                                "${subj.bengaliName} • ${note.chapterName}",
+                                buildString {
+                                    appendLine(note.content)
+                                    if (note.keyFormulaOrFact.isNotBlank()) {
+                                        appendLine()
+                                        appendLine("মূল সূত্র / তথ্য:")
+                                        appendLine(note.keyFormulaOrFact)
+                                    }
+                                    if (note.examTip.isNotBlank()) {
+                                        appendLine()
+                                        appendLine("পরীক্ষার টিপ:")
+                                        appendLine(note.examTip)
+                                    }
+                                }
+                            )
+                        },
                         onToggleBookmark = { onToggleBookmark(note) },
                         onDeleteCustom = null
                     )
@@ -436,6 +497,18 @@ private fun SubjectDetailView(
     onAskTutorFromNote: (MasterDataEntity) -> Unit,
     onOpenSmartLearningForSubject: () -> Unit,
     onOpenSmartLearningForNote: (MasterDataEntity) -> Unit,
+    onOpenMapBoard: (MapBoardDomain) -> Unit,
+    onOpenRapidFire: () -> Unit,
+    onOpenAudioRevisionForSubject: () -> Unit,
+    onOpenAudioRevisionForChapter: (String) -> Unit,
+    onOpenDiagramLab: () -> Unit,
+    onOpenWritingStudio: (WritingLanguage) -> Unit,
+    onOpenLanguageLab: (LanguageLabMode) -> Unit,
+    onOpenMathSolver: (MathSolverModule) -> Unit,
+    onOpenAiViva: () -> Unit,
+    onOpenConfusionCleaner: () -> Unit,
+    onOpenPocketBook: () -> Unit,
+    onExportPdf: (String, String, String, String) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onDeleteCustomNote: (Long) -> Unit,
     onOpenAddDialog: () -> Unit,
@@ -604,6 +677,457 @@ private fun SubjectDetailView(
                     }
                 }
 
+                // Rapid Fire Speed Booster + Hands-Free Audio Revision Quick Action Row
+                item(key = "subject_detail_topper_tools_row") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = onOpenRapidFire,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = TerracottaAccent.copy(alpha = 0.14f),
+                                contentColor = TerracottaAccent
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("subject_rapid_fire_btn_${subject.id}")
+                        ) {
+                            Icon(Icons.Rounded.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "র্যাপিড ফায়ার MCQ",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = onOpenAudioRevisionForSubject,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color(0xFF0E7490).copy(alpha = 0.14f),
+                                contentColor = Color(0xFF0E7490)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("subject_audio_revision_btn_${subject.id}")
+                        ) {
+                            Icon(Icons.Rounded.Headphones, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "অডিও রিভিশন",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                // Universal Subject Tools Row: AI Viva Oral Tutor + Confusion Cleaner + Pocket Book
+                item(key = "subject_detail_master_tools_row") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = onOpenAiViva,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = OnlineCobalt.copy(alpha = 0.13f),
+                                contentColor = OnlineCobalt
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("subject_ai_viva_btn_${subject.id}")
+                        ) {
+                            Icon(Icons.Rounded.RecordVoiceOver, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "AI Viva",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = onOpenConfusionCleaner,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color(0xFF6A1B9A).copy(alpha = 0.12f),
+                                contentColor = Color(0xFF6A1B9A)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1.15f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("subject_confusion_cleaner_btn_${subject.id}")
+                        ) {
+                            Icon(Icons.Rounded.CompareArrows, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "পার্থক্য ছক",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = onOpenPocketBook,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = SageOffline.copy(alpha = 0.14f),
+                                contentColor = SageOffline
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("subject_pocket_book_btn_${subject.id}")
+                        ) {
+                            Icon(Icons.Rounded.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "পকেট বুক",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                // Feature #15: Interactive Science Diagram Labelling Lab (Life Science & Physical Science)
+                if (subject == WbbseSubject.LIFE_SCIENCE || subject == WbbseSubject.PHYSICAL_SCIENCE) {
+                    item(key = "subject_diagram_lab_banner") {
+                        Card(
+                            onClick = onOpenDiagramLab,
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1565C0).copy(alpha = 0.12f)),
+                            border = BorderStroke(1.2.dp, Color(0xFF1565C0).copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("subject_diagram_lab_btn_${subject.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    color = Color(0xFF1565C0),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.Biotech, contentDescription = null, tint = Color.White)
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "ছবি চিহ্নিতকরণ ল্যাব (Interactive Diagram Lab)",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = Color(0xFF0D47A1),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (subject == WbbseSubject.LIFE_SCIENCE) {
+                                            "নিউরন, প্রতিবর্ত চাপ, ক্রোমোজোম ও মানবচক্ষুর অঙ্কন-চিহ্নিতকরণ প্র্যাকটিস (৫ নম্বর নিশ্চিত)।"
+                                        } else {
+                                            "প্রিজমে আলোর বিচ্ছুরণ ও উত্তল লেন্সের রশ্মিচিত্র লেবেলিং প্র্যাকটিস।"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Feature #19: Offline Math & Mensuration Solver (Mathematics)
+                if (subject == WbbseSubject.MATHEMATICS) {
+                    item(key = "subject_math_solver_banner") {
+                        Card(
+                            onClick = { onOpenMathSolver(MathSolverModule.SPHERE) },
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE65100).copy(alpha = 0.12f)),
+                            border = BorderStroke(1.2.dp, Color(0xFFE65100).copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("subject_math_solver_btn")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    color = Color(0xFFE65100),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.Calculate, contentDescription = null, tint = Color.White)
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "স্মার্ট ম্যাথ ও পরিমিতি সলভার (১০০% অফলাইন)",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = Color(0xFFBF360C),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "সরল/চক্রবৃদ্ধি সুদ, শ্রীধর আচার্য, গোলক, চোঙ ও শঙ্কুর ৩ডি চিত্রসহ ধাপে ধাপে সমাধান + PDF।",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Features #17 & #18: Bengali Writing Studio + Bengali Grammar Lab
+                if (subject == WbbseSubject.BENGALI) {
+                    item(key = "subject_bengali_mastery_banners") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Card(
+                                onClick = { onOpenLanguageLab(LanguageLabMode.BENGALI_GRAMMAR_LAB) },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFAD1457).copy(alpha = 0.11f)),
+                                border = BorderStroke(1.2.dp, Color(0xFFAD1457).copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("subject_bengali_grammar_lab_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        color = Color(0xFFAD1457),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.size(42.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.Spellcheck, contentDescription = null, tint = Color.White)
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "বাংলা ব্যাকরণ গুরু (Grammar Lab — ১৬ নম্বর)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = Color(0xFF880E4F),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "কারক-বিভক্তি, সমাস, বাক্য ও বাচ্য পরিবর্তন — উদাহরণ ও ইন্টারেক্টিভ বিশ্লেষক।",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            Card(
+                                onClick = { onOpenWritingStudio(WritingLanguage.BENGALI) },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF6A1B9A).copy(alpha = 0.11f)),
+                                border = BorderStroke(1.2.dp, Color(0xFF6A1B9A).copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("subject_bengali_writing_studio_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        color = Color(0xFF6A1B9A),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.size(42.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.EditNote, contentDescription = null, tint = Color.White)
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "রাইটিং ও রচনা স্টুডিও (প্রবন্ধ, সংলাপ, প্রতিবেদন, বঙ্গানুবাদ)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = Color(0xFF4A148C),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "মাধ্যমিক ফরম্যাট অনুযায়ী সম্পূর্ণ বাংলা নির্মিতি তৈরি ও PDF সেভ করো।",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Features #17 & #18: English Seen/Unseen/Grammar Lab + English Writing Studio
+                if (subject == WbbseSubject.ENGLISH) {
+                    item(key = "subject_english_mastery_banners") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Card(
+                                onClick = { onOpenLanguageLab(LanguageLabMode.ENGLISH_LAB) },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0277BD).copy(alpha = 0.11f)),
+                                border = BorderStroke(1.2.dp, Color(0xFF0277BD).copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("subject_english_grammar_lab_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        color = Color(0xFF0277BD),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.size(42.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.Spellcheck, contentDescription = null, tint = Color.White)
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "ইংলিশ সিন, আনসিন ও গ্রামার ল্যাব (৬০ নম্বর)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = Color(0xFF01579B),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Seen/Unseen Passage Solver, Phrasal Verbs, Voice, Narration ও Do as Directed।",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            Card(
+                                onClick = { onOpenWritingStudio(WritingLanguage.ENGLISH) },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2E7D32).copy(alpha = 0.11f)),
+                                border = BorderStroke(1.2.dp, Color(0xFF2E7D32).copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("subject_english_writing_studio_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Surface(
+                                        color = Color(0xFF2E7D32),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.size(42.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Rounded.EditNote, contentDescription = null, tint = Color.White)
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "English Writing Studio (Notice, Report, Letter, Process)",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = Color(0xFF1B5E20),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "WBBSE Box Notice, Editorial Letter, Report, Biography ও Story — ১ ক্লিকে PDF!",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Dedicated Interactive Map Pointing Board Banner for History (4 Marks) & Geography (10 Marks)
+                if (subject == WbbseSubject.HISTORY || subject == WbbseSubject.GEOGRAPHY) {
+                    val mapDomain = if (subject == WbbseSubject.HISTORY) {
+                        MapBoardDomain.HISTORY
+                    } else {
+                        MapBoardDomain.GEOGRAPHY
+                    }
+                    item(key = "subject_interactive_map_board_banner") {
+                        Card(
+                            onClick = { onOpenMapBoard(mapDomain) },
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF00796B).copy(alpha = 0.13f)),
+                            border = BorderStroke(1.2.dp, Color(0xFF00796B).copy(alpha = 0.45f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("subject_map_board_btn_${subject.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    color = Color(0xFF00796B),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Rounded.Map, contentDescription = null, tint = Color.White)
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (mapDomain == MapBoardDomain.HISTORY) {
+                                            "ইতিহাস ম্যাপ পয়েন্টিং বোর্ড (৪ নম্বর নিশ্চিত)"
+                                        } else {
+                                            "ভূগোল ম্যাপ পয়েন্টিং বোর্ড (১০ নম্বর নিশ্চিত)"
+                                        },
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = Color(0xFF00695C),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "জুম-যোগ্য ভারতের মানচিত্রে ট্যাপ করে প্র্যাকটিস করো, সঠিক অবস্থান ও বোর্ড প্রতীক (▲ 〰 ▓ ★) শেখো।",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item(key = "subject_search_field") {
                     OutlinedTextField(
                         value = searchQuery,
@@ -672,6 +1196,27 @@ private fun SubjectDetailView(
                             },
                             onAskTutorFromNote = onAskTutorFromNote,
                             onOpenSmartLearningForNote = onOpenSmartLearningForNote,
+                            onOpenAudioRevision = { onOpenAudioRevisionForChapter(group.chapterName) },
+                            onExportNotePdf = { note ->
+                                onExportPdf(
+                                    "${subject.bengaliName}_${note.topicTitle}",
+                                    note.topicTitle,
+                                    "${subject.bengaliName} • ${note.chapterName}",
+                                    buildString {
+                                        appendLine(note.content)
+                                        if (note.keyFormulaOrFact.isNotBlank()) {
+                                            appendLine()
+                                            appendLine("মূল সূত্র / তথ্য:")
+                                            appendLine(note.keyFormulaOrFact)
+                                        }
+                                        if (note.examTip.isNotBlank()) {
+                                            appendLine()
+                                            appendLine("পরীক্ষার টিপ:")
+                                            appendLine(note.examTip)
+                                        }
+                                    }
+                                )
+                            },
                             onToggleBookmark = onToggleBookmark,
                             onDeleteCustomNote = onDeleteCustomNote
                         )

@@ -83,3 +83,52 @@ data class TopperMistakeEntity(
     val isResolved: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "daily_plan_tasks")
+data class DailyPlanTaskEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val dateStamp: String, // YYYY-MM-DD
+    val targetHours: Int, // 2, 4, or 6
+    val subjectId: String,
+    val titleBn: String,
+    val detailBn: String,
+    val durationMinutes: Int,
+    val actionType: String, // SMART_LEARNING, SUBJECT_NOTE, TOPPER_CAPSULE, RAPID_FIRE, MAP_BOARD
+    val isCompleted: Boolean = false,
+    val orderIndex: Int = 0
+)
+
+@Entity(tableName = "study_streak")
+data class StudyStreakEntity(
+    @PrimaryKey val id: Int = 1,
+    val currentStreak: Int = 0,
+    val longestStreak: Int = 0,
+    val lastCompletedDateStamp: String = "",
+    val totalTasksCompleted: Int = 0,
+    val selectedDailyHours: Int = 4
+)
+
+@Entity(tableName = "brahmastram_progress")
+data class BrahmastramProgressEntity(
+    @PrimaryKey val subjectId: String,
+    val completedNoteIdsCsv: String = "",
+    val totalNotesCount: Int = 0,
+    val lastExamScore: Float = 0f,
+    val lastExamMaxMarks: Float = 0f,
+    val examsTakenCount: Int = 0,
+    val lastUpdatedMs: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "spaced_revision_items")
+data class SpacedRevisionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subjectId: String,
+    val chapterName: String,
+    val topicTitle: String,
+    val keySummary: String,
+    val sourceType: String, // "STUDY" or "MISTAKE"
+    val intervalDays: Int = 3, // 3 -> 7 -> 21
+    val masteryStage: Int = 0, // 0=3d, 1=7d, 2=21d, 3=Mastered
+    val lastReviewedAtMs: Long = System.currentTimeMillis(),
+    val nextReviewAtMs: Long = System.currentTimeMillis()
+)

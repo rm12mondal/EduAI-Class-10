@@ -8,6 +8,7 @@ import com.example.data.gguf.GgufModelManager
 import com.example.data.gguf.LlamaNativeBridge
 import com.example.data.local.MasterDataEntity
 import com.example.data.local.StudyRepository
+import com.example.data.master.StrictWbbsePrecisionEngine
 import com.example.model.ActiveExamSession
 import com.example.model.ChatPromptOptions
 import com.example.model.ExamChatIntent
@@ -109,7 +110,8 @@ class HybridEduAiRepository(
                         "Bengali (বাংলা), English, Mathematics (গণিত), Physical Science (ভৌত বিজ্ঞান), " +
                         "Life Science (জীবন বিজ্ঞান), History (ইতিহাস), and Geography (ভূগোল). " +
                         "Respond clearly in the student's language (Bengali or English). " +
-                        "Include exact formulas, dates, scientific terms, and WBBSE board marking tips."
+                        "Include exact formulas, dates, scientific terms, and WBBSE board marking tips. " +
+                        StrictWbbsePrecisionEngine.STRICT_FACT_LOCK_PROMPT_RULE
                 )
             }
         )
@@ -338,8 +340,8 @@ class HybridEduAiRepository(
         handwrittenImage: Bitmap?,
         mode: InferenceMode
     ): SubjectiveEvaluationResult {
-        if (mode == InferenceMode.ONLINE) {
-            return evaluateOnlineWithGemini(
+        val baseResult = if (mode == InferenceMode.ONLINE) {
+            evaluateOnlineWithGemini(
                 subject = subject,
                 question = question,
                 maxMarks = maxMarks,
@@ -347,20 +349,37 @@ class HybridEduAiRepository(
                 studentTypedAnswer = studentTypedAnswer,
                 handwrittenImage = handwrittenImage
             )
-        }
-
-        if (handwrittenImage != null && studentTypedAnswer.isBlank()) {
-            throw IllegalStateException(
-                "হাতের লেখা খাতার ছবি মূল্যায়নের জন্য উপরের টগল দিয়ে অনলাইন মোড (Online Mode) চালু করো অথবা উত্তরটি টাইপ করে জমা দাও।"
+        } else {
+            if (handwrittenImage != null && studentTypedAnswer.isBlank()) {
+                throw IllegalStateException(
+                    "হাতের লেখা খাতার ছবি মূল্যায়নের জন্য উপরের টগল দিয়ে অনলাইন মোড (Online Mode) চালু করো অথবা উত্তরটি টাইপ করে জমা দাও।"
+                )
+            }
+            evaluateOfflineByRubric(
+                maxMarks = maxMarks,
+                modelAnswer = modelAnswer,
+                keyTerms = keyTerms,
+                studentTypedAnswer = studentTypedAnswer
             )
         }
 
-        return evaluateOfflineByRubric(
-            maxMarks = maxMarks,
-            modelAnswer = modelAnswer,
-            keyTerms = keyTerms,
-            studentTypedAnswer = studentTypedAnswer
-        )
+        // Automatic Precision Audits: #12 Math/Physics Step & Unit Checker + #13 Bengali/English Spelling & Grammar Checker
+        val auditNotes = buildList {
+            StrictWbbsePrecisionEngine.analyzeMathPhysicsStepsAndUnits(subject, question, studentTypedAnswer)
+                ?.let { add(it.summaryBn) }
+            StrictWbbsePrecisionEngine.analyzeBengaliEnglishLanguage(subject, studentTypedAnswer)
+                ?.let { add(it.summaryBn) }
+        }
+        return if (auditNotes.isEmpty()) {
+            baseResult
+        } else {
+            val mergedGaps = buildString {
+                append(baseResult.mistakesAndGaps)
+                append("\n\n")
+                append(auditNotes.joinToString("\n"))
+            }
+            baseResult.copy(mistakesAndGaps = mergedGaps)
+        }
     }
 
     private suspend fun kotlinx.coroutines.flow.FlowCollector<AiStreamEvent>.streamFromOnlineModel(
@@ -846,8 +865,8 @@ class HybridEduAiRepository(
             val subjectLine = subject?.let { "${it.bengaliName} (${it.englishName})" }
                 ?: "পশ্চিমবঙ্গ বোর্ড ক্লাস ১০ (৭টি বিষয়)"
             buildString {
-                append("📚 $subjectLine — অফলাইন মাস্টার ডেটা অনুসন্ধান\n\n")
-                append("তোমার প্রশ্ন “$query”-এর সরাসরি উত্তর অফলাইন মাস্টার ডেটায় পাওয়া যায়নি। বিস্তারিত টু-দ্য-পয়েন্ট উত্তর, অনুবাদ বা AI ভিজ্যুয়াল ডায়াগ্রামের জন্য উপরের সুইচ দিয়ে **অনলাইন মোড (Online)** চালু করো, অথবা এই অধ্যায়গুলো থেকে জিজ্ঞেস করো:\n")
+                append("📚 $subjectLine — Strict WBBSE Fact-Lock (অফলাইন যাচাই)\n\n")
+                append("🔒 ১০০% নির্ভুলতার নিয়ম অনুযায়ী আমি অনুমান করে কোনো তথ্য দেব না। তোমার প্রশ্ন “$query”-এর সরাসরি যাচাইকৃত অংশ ১০৩-অধ্যায়ের অফলাইন ডেটায় মেলেনি। নিখুঁত উত্তর পেতে উপরের সুইচ দিয়ে **অনলাইন মোড (Online)** চালু করো, অথবা এই যাচাইকৃত অধ্যায়গুলো থেকে জিজ্ঞেস করো:\n")
                 append("• ভৌত বিজ্ঞান: বয়েল-চার্লস, ওহমের সূত্র, স্নেলের সূত্র, পর্যায় সারণি\n")
                 append("• জীবন বিজ্ঞান: অ্যানাফেজ-মাইটোসিস, অক্সিন, মেন্ডেল, নাইট্রোজেন চক্র\n")
                 append("• গণিত: শ্রীধর আচার্য, পিথাগোরাস, বৃত্তস্থ চতুর্ভুজ, ত্রিকোণমিতি\n")

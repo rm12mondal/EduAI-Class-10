@@ -43,9 +43,27 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
 import com.example.model.AppTab
+import com.example.model.DailyPlannerUiState
+import com.example.model.PocketBookCategory
+import com.example.model.SpacedRevisionUiState
+import com.example.model.WbbseSubject
 import com.example.ui.chat.ChatScreen
 import com.example.ui.exam.ExamScreen
+import com.example.ui.extras.AudioRevisionPlayerModal
+import com.example.ui.extras.DailyPlannerSheetDialog
+import com.example.ui.extras.InteractiveMapBoardScreen
+import com.example.ui.extras.RapidFireScreen
 import com.example.ui.learning.SmartLearningScreen
+import com.example.ui.master.AiVivaOralScreen
+import com.example.ui.master.BrahmastramScreen
+import com.example.ui.master.ConfusionCleanerScreen
+import com.example.ui.master.DiagramLabellingScreen
+import com.example.ui.master.LanguageLabScreen
+import com.example.ui.master.MathMensurationSolverScreen
+import com.example.ui.master.PdfExportDialog
+import com.example.ui.master.PocketBookScreen
+import com.example.ui.master.SavedPdfLibraryScreen
+import com.example.ui.master.WritingStudioScreen
 import com.example.ui.model.ModelManagerScreen
 import com.example.ui.subjects.SubjectsScreen
 import com.example.ui.topper.TopperScreen
@@ -107,8 +125,37 @@ fun EduAiApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val topperState by viewModel.topperState.collectAsStateWithLifecycle()
     val smartLearningState by viewModel.smartLearningState.collectAsStateWithLifecycle()
+    val plannerState by viewModel.plannerState.collectAsStateWithLifecycle()
+    val mapBoardState by viewModel.mapBoardState.collectAsStateWithLifecycle()
+    val rapidFireState by viewModel.rapidFireState.collectAsStateWithLifecycle()
+    val audioRevisionState by viewModel.audioRevisionState.collectAsStateWithLifecycle()
+    val pdfState by viewModel.pdfState.collectAsStateWithLifecycle()
+    val brahmastramState by viewModel.brahmastramState.collectAsStateWithLifecycle()
+    val pocketBookState by viewModel.pocketBookState.collectAsStateWithLifecycle()
+    val vivaState by viewModel.vivaState.collectAsStateWithLifecycle()
+    val confusionState by viewModel.confusionState.collectAsStateWithLifecycle()
+    val spacedRevisionState by viewModel.spacedRevisionState.collectAsStateWithLifecycle()
+    val diagramLabState by viewModel.diagramLabState.collectAsStateWithLifecycle()
+    val writingStudioState by viewModel.writingStudioState.collectAsStateWithLifecycle()
+    val languageLabState by viewModel.languageLabState.collectAsStateWithLifecycle()
+    val mathSolverState by viewModel.mathSolverState.collectAsStateWithLifecycle()
+    val backupStatusMessage by viewModel.backupStatusMessage.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    val hasFullScreenOverlay = smartLearningState.isOpen ||
+        mapBoardState.isOpen ||
+        rapidFireState.isOpen ||
+        audioRevisionState.isOpen ||
+        pdfState.isOpen ||
+        brahmastramState.isOpen ||
+        pocketBookState.isOpen ||
+        vivaState.isOpen ||
+        confusionState.isOpen ||
+        diagramLabState.isOpen ||
+        writingStudioState.isOpen ||
+        languageLabState.isOpen ||
+        mathSolverState.isOpen
 
     LaunchedEffect(uiState.errorMessage) {
         val error = uiState.errorMessage
@@ -134,6 +181,14 @@ fun EduAiApp(
         }
     }
 
+    LaunchedEffect(pdfState.statusMessage) {
+        val status = pdfState.statusMessage
+        if (!status.isNullOrBlank() && pdfState.pendingExportRequest == null) {
+            snackbarHostState.showSnackbar(status)
+            viewModel.clearPdfStatusMessage()
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavRail = maxWidth >= 600.dp
 
@@ -141,7 +196,7 @@ fun EduAiApp(
             contentWindowInsets = WindowInsets.safeDrawing,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             bottomBar = {
-                if (!useNavRail && !smartLearningState.isOpen) {
+                if (!useNavRail && !hasFullScreenOverlay) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
@@ -170,100 +225,336 @@ fun EduAiApp(
                 }
             }
         ) { innerPadding ->
-            if (smartLearningState.isOpen) {
-                SmartLearningScreen(
-                    state = smartLearningState,
-                    masterNotes = uiState.masterNotes,
-                    inferenceMode = uiState.inferenceMode,
-                    speakingMessageId = uiState.ttsState.speakingMessageId,
-                    onBack = viewModel::closeSmartLearning,
-                    onToggleInferenceMode = viewModel::toggleInferenceMode,
-                    onSelectSubject = viewModel::selectSmartLearningSubject,
-                    onSelectChapter = viewModel::selectSmartLearningChapter,
-                    onToggleDiagramMode = viewModel::toggleSmartLearningDiagramMode,
-                    onShowOfflinePhotoNotice = viewModel::showSmartLearningOfflinePhotoNotice,
-                    onDismissOfflinePhotoNotice = viewModel::dismissSmartLearningOfflinePhotoNotice,
-                    onAttachPhotoUri = viewModel::attachSmartLearningPhotoUri,
-                    onClearPendingPhoto = viewModel::clearSmartLearningPendingPhoto,
-                    onClearSession = viewModel::clearSmartLearningSession,
-                    onSendMessage = viewModel::sendSmartLearningMessage,
-                    onGenerateDiagramForMessage = viewModel::generateSmartLearningDiagramForMessage,
-                    onStartTwoMinuteQuiz = viewModel::startSmartLearningQuickQuiz,
-                    onSelectQuizOption = viewModel::selectSmartLearningQuizOption,
-                    onSubmitQuickQuiz = viewModel::submitSmartLearningQuickQuiz,
-                    onCloseQuickQuiz = viewModel::closeSmartLearningQuickQuiz,
-                    onStartSmartMemorizer = viewModel::startSmartLearningMemorizer,
-                    onToggleMemorizerRecall = viewModel::toggleSmartLearningMemorizerRecall,
-                    onToggleMemorizerRevealStep = viewModel::toggleSmartLearningMemorizerStep,
-                    onCloseSmartMemorizer = viewModel::closeSmartLearningMemorizer,
-                    onToggleSpeak = viewModel::toggleSpeakMessage,
-                    onShowSnackbar = { msg ->
-                        scope.launch { snackbarHostState.showSnackbar(msg) }
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (useNavRail) {
-                        NavigationRail(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ) {
-                            appDestinations.forEach { dest ->
-                                val selected = uiState.activeTab == dest.tab
-                                NavigationRailItem(
-                                    selected = selected,
-                                    onClick = { viewModel.selectTab(dest.tab) },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
-                                            contentDescription = stringResource(dest.labelRes)
-                                        )
-                                    },
-                                    label = {
-                                        Text(
-                                            text = stringResource(dest.labelRes),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    },
-                                    modifier = Modifier.testTag(dest.testTag)
-                                )
+            when {
+                audioRevisionState.isOpen -> {
+                    AudioRevisionPlayerModal(
+                        state = audioRevisionState,
+                        onTogglePlayPause = viewModel::toggleAudioRevisionPlayPause,
+                        onNext = viewModel::nextAudioRevisionTrack,
+                        onPrevious = viewModel::previousAudioRevisionTrack,
+                        onSelectTrack = viewModel::selectAudioRevisionTrack,
+                        onSelectSpeed = viewModel::setAudioRevisionSpeed,
+                        onToggleAutoAdvance = viewModel::toggleAudioRevisionAutoAdvance,
+                        onClose = viewModel::closeAudioRevision,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                mapBoardState.isOpen -> {
+                    InteractiveMapBoardScreen(
+                        domain = mapBoardState.domain,
+                        onSwitchDomain = viewModel::switchMapBoardDomain,
+                        onBack = viewModel::closeMapBoard,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                rapidFireState.isOpen -> {
+                    RapidFireScreen(
+                        state = rapidFireState,
+                        onSelectSubject = viewModel::selectRapidFireSubject,
+                        onSelectQuestionCount = viewModel::selectRapidFireQuestionCount,
+                        onSelectTimerMode = viewModel::selectRapidFireTimerMode,
+                        onStartDrill = viewModel::startRapidFireDrill,
+                        onAnswerOption = viewModel::answerRapidFireOption,
+                        onNextQuestion = viewModel::advanceRapidFireNext,
+                        onFinishEarly = viewModel::finishRapidFireEarly,
+                        onOpenMistakeRecovery = viewModel::openMistakeRecoveryFromRapidFire,
+                        onBack = viewModel::closeRapidFire,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                pdfState.isOpen -> {
+                    SavedPdfLibraryScreen(
+                        state = pdfState,
+                        onRename = viewModel::renameSavedPdf,
+                        onDelete = viewModel::deleteSavedPdf,
+                        onBack = viewModel::closeSavedPdfLibrary,
+                        onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                brahmastramState.isOpen -> {
+                    BrahmastramScreen(
+                        state = brahmastramState,
+                        speakingMessageId = uiState.ttsState.speakingMessageId,
+                        onSelectSubject = viewModel::selectBrahmastramSubject,
+                        onRegenerateNotes = viewModel::regenerateBrahmastramNotes,
+                        onToggleNoteCompleted = viewModel::toggleBrahmastramNoteCompleted,
+                        onToggleSpeak = viewModel::toggleSpeakMessage,
+                        onExportNotesPdf = { name, title, body ->
+                            viewModel.requestPdfExport(name, title, "ব্রহ্মাস্ত্রম নোটস • WBBSE", body)
+                        },
+                        onStartTimedExam = viewModel::startBrahmastramExam,
+                        onSelectMcqOption = viewModel::selectBrahmastramMcqOption,
+                        onUpdateTypedAnswer = viewModel::updateBrahmastramTypedAnswer,
+                        onSubmitExam = viewModel::submitBrahmastramExam,
+                        onBackToNotes = viewModel::returnToBrahmastramNotes,
+                        onClose = viewModel::closeBrahmastram,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                pocketBookState.isOpen -> {
+                    PocketBookScreen(
+                        state = pocketBookState,
+                        savedPdfCount = pdfState.items.size,
+                        onSelectCategory = viewModel::selectPocketBookCategory,
+                        onSearchChange = viewModel::updatePocketBookSearch,
+                        onOpenSavedPdfLibrary = viewModel::openSavedPdfLibrary,
+                        onExportCardPdf = { name, title, body ->
+                            viewModel.requestPdfExport(name, title, "পকেট বুক • WBBSE", body)
+                        },
+                        onBack = viewModel::closePocketBook,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                confusionState.isOpen -> {
+                    ConfusionCleanerScreen(
+                        state = confusionState,
+                        onExportPdf = { name, title, body ->
+                            viewModel.requestPdfExport(name, title, "কনফিউশন ক্লিনার • WBBSE", body)
+                        },
+                        onBack = viewModel::closeConfusionCleaner,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                vivaState.isOpen -> {
+                    AiVivaOralScreen(
+                        state = vivaState,
+                        onRepeatQuestionAloud = viewModel::speakCurrentVivaQuestion,
+                        onSubmitAnswer = viewModel::submitVivaAnswer,
+                        onClose = viewModel::closeAiViva,
+                        onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                diagramLabState.isOpen -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        DiagramLabellingScreen(
+                            state = diagramLabState,
+                            onSwitchSubject = viewModel::switchDiagramLabSubject,
+                            onSelectDiagram = viewModel::selectDiagramIndex,
+                            onExportPdf = viewModel::requestPdfExport,
+                            onClose = viewModel::closeDiagramLab
+                        )
+                    }
+                }
+
+                writingStudioState.isOpen -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        WritingStudioScreen(
+                            state = writingStudioState,
+                            onSelectFormat = viewModel::selectWritingFormat,
+                            onUpdateTopic = viewModel::updateWritingTopic,
+                            onGenerate = viewModel::generateWritingOutput,
+                            onExportPdf = viewModel::requestPdfExport,
+                            onClose = viewModel::closeWritingStudio
+                        )
+                    }
+                }
+
+                languageLabState.isOpen -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        LanguageLabScreen(
+                            state = languageLabState,
+                            onUpdateBengaliInput = viewModel::updateBengaliAnalyzerInput,
+                            onRunBengaliAnalyzer = viewModel::runBengaliGrammarAnalyzer,
+                            onUpdateCustomUnseen = viewModel::updateCustomUnseenInput,
+                            onSolveCustomUnseen = viewModel::solveCustomUnseenPassage,
+                            onExportPdf = viewModel::requestPdfExport,
+                            onClose = viewModel::closeLanguageLab
+                        )
+                    }
+                }
+
+                mathSolverState.isOpen -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        MathMensurationSolverScreen(
+                            state = mathSolverState,
+                            onSelectModule = viewModel::selectMathSolverModule,
+                            onExportPdf = viewModel::requestPdfExport,
+                            onClose = viewModel::closeMathSolver
+                        )
+                    }
+                }
+
+                smartLearningState.isOpen -> {
+                    SmartLearningScreen(
+                        state = smartLearningState,
+                        masterNotes = uiState.masterNotes,
+                        inferenceMode = uiState.inferenceMode,
+                        speakingMessageId = uiState.ttsState.speakingMessageId,
+                        onBack = viewModel::closeSmartLearning,
+                        onToggleInferenceMode = viewModel::toggleInferenceMode,
+                        onSelectSubject = viewModel::selectSmartLearningSubject,
+                        onSelectChapter = viewModel::selectSmartLearningChapter,
+                        onToggleDiagramMode = viewModel::toggleSmartLearningDiagramMode,
+                        onShowOfflinePhotoNotice = viewModel::showSmartLearningOfflinePhotoNotice,
+                        onDismissOfflinePhotoNotice = viewModel::dismissSmartLearningOfflinePhotoNotice,
+                        onAttachPhotoUri = viewModel::attachSmartLearningPhotoUri,
+                        onClearPendingPhoto = viewModel::clearSmartLearningPendingPhoto,
+                        onClearSession = viewModel::clearSmartLearningSession,
+                        onSendMessage = viewModel::sendSmartLearningMessage,
+                        onGenerateDiagramForMessage = viewModel::generateSmartLearningDiagramForMessage,
+                        onStartTwoMinuteQuiz = viewModel::startSmartLearningQuickQuiz,
+                        onSelectQuizOption = viewModel::selectSmartLearningQuizOption,
+                        onSubmitQuickQuiz = viewModel::submitSmartLearningQuickQuiz,
+                        onCloseQuickQuiz = viewModel::closeSmartLearningQuickQuiz,
+                        onStartSmartMemorizer = viewModel::startSmartLearningMemorizer,
+                        onToggleMemorizerRecall = viewModel::toggleSmartLearningMemorizerRecall,
+                        onToggleMemorizerRevealStep = viewModel::toggleSmartLearningMemorizerStep,
+                        onCloseSmartMemorizer = viewModel::closeSmartLearningMemorizer,
+                        onToggleSpeak = viewModel::toggleSpeakMessage,
+                        onOpenAudioRevision = viewModel::openAudioRevisionForSmartLearning,
+                        onExportPdf = viewModel::requestPdfExport,
+                        onShowSnackbar = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                else -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    ) {
+                        if (useNavRail) {
+                            NavigationRail(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ) {
+                                appDestinations.forEach { dest ->
+                                    val selected = uiState.activeTab == dest.tab
+                                    NavigationRailItem(
+                                        selected = selected,
+                                        onClick = { viewModel.selectTab(dest.tab) },
+                                        icon = {
+                                            Icon(
+                                                imageVector = if (selected) dest.selectedIcon else dest.unselectedIcon,
+                                                contentDescription = stringResource(dest.labelRes)
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = stringResource(dest.labelRes),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        modifier = Modifier.testTag(dest.testTag)
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    Box(modifier = Modifier.weight(1f)) {
-                        ActiveScreenHost(
-                            uiState = uiState,
-                            topperState = topperState,
-                            viewModel = viewModel,
-                            onShowSnackbar = { msg ->
-                                scope.launch { snackbarHostState.showSnackbar(msg) }
-                            }
-                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            ActiveScreenHost(
+                                uiState = uiState,
+                                topperState = topperState,
+                                plannerState = plannerState,
+                                spacedRevisionState = spacedRevisionState,
+                                savedPdfCount = pdfState.items.size,
+                                backupStatusMessage = backupStatusMessage,
+                                viewModel = viewModel,
+                                onShowSnackbar = { msg ->
+                                    scope.launch { snackbarHostState.showSnackbar(msg) }
+                                }
+                            )
+                        }
                     }
                 }
             }
         }
+
+        if (plannerState.isSheetOpen) {
+            DailyPlannerSheetDialog(
+                state = plannerState,
+                inferenceMode = uiState.inferenceMode,
+                onDismiss = { viewModel.setDailyPlannerSheetOpen(false) },
+                onSelectHoursAndGenerate = viewModel::generateDailyPlan,
+                onToggleTask = viewModel::toggleDailyPlanTask,
+                onLaunchTaskAction = viewModel::launchDailyPlanTask
+            )
+        }
+
+        if (pdfState.pendingExportRequest != null) {
+            PdfExportDialog(
+                state = pdfState,
+                onConfirmGenerate = viewModel::confirmGeneratePdf,
+                onDismiss = viewModel::dismissPdfExportDialog,
+                onOpenLibrary = viewModel::openSavedPdfLibrary,
+                onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+            )
+        }
     }
+}
+
+private fun pocketCategoryForSubject(subject: WbbseSubject): PocketBookCategory = when (subject) {
+    WbbseSubject.MATHEMATICS -> PocketBookCategory.MATH_FORMULAS
+    WbbseSubject.PHYSICAL_SCIENCE -> PocketBookCategory.PHYSICS_REACTIONS
+    WbbseSubject.LIFE_SCIENCE -> PocketBookCategory.LIFE_SCIENCE_KEYS
+    WbbseSubject.HISTORY, WbbseSubject.GEOGRAPHY -> PocketBookCategory.HISTORY_DATES
+    WbbseSubject.BENGALI, WbbseSubject.ENGLISH -> PocketBookCategory.LITERATURE_AUTHORS
 }
 
 @Composable
 private fun ActiveScreenHost(
     uiState: EduAiUiState,
     topperState: TopperUiState,
+    plannerState: DailyPlannerUiState,
+    spacedRevisionState: SpacedRevisionUiState,
+    savedPdfCount: Int,
+    backupStatusMessage: String?,
     viewModel: EduAiViewModel,
     onShowSnackbar: (String) -> Unit
 ) {
     when (uiState.activeTab) {
         AppTab.CHAT -> ChatScreen(
             uiState = uiState,
+            plannerState = plannerState,
+            spacedRevisionState = spacedRevisionState,
+            savedPdfCount = savedPdfCount,
             onToggleMode = viewModel::toggleInferenceMode,
             onSelectSubject = viewModel::selectChatSubject,
             onSendQuestion = { q -> viewModel.sendQuestion(q) },
@@ -277,6 +568,21 @@ private fun ActiveScreenHost(
             onClearChat = viewModel::clearChatHistory,
             onOpenModelHub = { viewModel.selectTab(AppTab.MODEL_HUB) },
             onOpenSmartLearning = { subj -> viewModel.openSmartLearning(subject = subj) },
+            onOpenPlannerSheet = { viewModel.setDailyPlannerSheetOpen(true) },
+            onSelectDailyHours = viewModel::generateDailyPlan,
+            onToggleDailyTask = viewModel::toggleDailyPlanTask,
+            onLaunchDailyTask = viewModel::launchDailyPlanTask,
+            onMarkRevisionDone = viewModel::markSpacedRevisionCompleted,
+            onFocusWeakSubject = { subj ->
+                viewModel.selectTab(AppTab.SUBJECTS)
+                viewModel.openSubjectDetail(subj)
+            },
+            onOpenBrahmastram = {
+                viewModel.openBrahmastram(uiState.selectedChatSubject ?: WbbseSubject.PHYSICAL_SCIENCE)
+            },
+            onOpenPocketBook = { viewModel.openPocketBook() },
+            onOpenSavedPdfs = viewModel::openSavedPdfLibrary,
+            onExportPdf = viewModel::requestPdfExport,
             onShowToast = onShowSnackbar
         )
 
@@ -289,6 +595,18 @@ private fun ActiveScreenHost(
             onAskTutorFromNote = viewModel::askFromMasterNote,
             onOpenSmartLearningForSubject = { subj -> viewModel.openSmartLearning(subject = subj) },
             onOpenSmartLearningForNote = { note -> viewModel.openSmartLearning(autoExplainNote = note) },
+            onOpenMapBoard = viewModel::openMapBoard,
+            onOpenRapidFire = viewModel::openRapidFire,
+            onOpenAudioRevisionForSubject = viewModel::openAudioRevisionForSubject,
+            onOpenAudioRevisionForChapter = viewModel::openAudioRevisionForChapter,
+            onOpenDiagramLab = viewModel::openDiagramLab,
+            onOpenWritingStudio = viewModel::openWritingStudio,
+            onOpenLanguageLab = viewModel::openLanguageLab,
+            onOpenMathSolver = viewModel::openMathSolver,
+            onOpenAiViva = { subj -> viewModel.openAiViva(subj) },
+            onOpenConfusionCleaner = viewModel::openConfusionCleaner,
+            onOpenPocketBook = { subj -> viewModel.openPocketBook(pocketCategoryForSubject(subj)) },
+            onExportPdf = viewModel::requestPdfExport,
             onToggleBookmark = viewModel::toggleBookmark,
             onAddCustomNote = viewModel::addCustomNote,
             onDeleteCustomNote = viewModel::deleteCustomNote
@@ -315,12 +633,15 @@ private fun ActiveScreenHost(
             onClearExamChat = viewModel::clearExamChat,
             onSendExamChatMessage = viewModel::sendExamChatMessage,
             onToggleSpeakMessage = viewModel::toggleSpeakMessage,
+            onOpenRapidFire = viewModel::openRapidFire,
             onShowSnackbar = onShowSnackbar
         )
 
         AppTab.TOPPER -> TopperScreen(
             topperState = topperState,
             inferenceMode = uiState.inferenceMode,
+            scorePredictor = uiState.scorePredictor,
+            savedPdfCount = savedPdfCount,
             onSelectTrack = viewModel::selectTopperTrack,
             onToggleTwistedChallenge = viewModel::toggleTopperTwistedChallenge,
             onToggleFullBlueprint = viewModel::toggleTopperFullBlueprint,
@@ -335,6 +656,17 @@ private fun ActiveScreenHost(
             onAddPhotoUri = viewModel::addTopperQuestionPhotoUri,
             onRemovePhoto = viewModel::removeTopperQuestionPhoto,
             onSubmitPaper = viewModel::submitTopperPaper,
+            onOpenMapBoard = viewModel::openMapBoard,
+            onOpenRapidFire = viewModel::openRapidFire,
+            onOpenBrahmastram = {
+                viewModel.openBrahmastram(topperState.selectedTrack.linkedSubject)
+            },
+            onOpenPocketBook = { viewModel.openPocketBook() },
+            onOpenSavedPdfs = viewModel::openSavedPdfLibrary,
+            onFocusSubject = { subj ->
+                viewModel.selectTab(AppTab.SUBJECTS)
+                viewModel.openSubjectDetail(subj)
+            },
             onShowSnackbar = onShowSnackbar
         )
 
@@ -352,7 +684,11 @@ private fun ActiveScreenHost(
             onTestTtsVoice = viewModel::testTtsVoice,
             onRefreshTtsVoices = viewModel::refreshTtsVoices,
             onClearChatHistory = viewModel::clearChatHistory,
-            onDismissStatusBanner = viewModel::dismissModelStatusBanner
+            onDismissStatusBanner = viewModel::dismissModelStatusBanner,
+            backupStatusMessage = backupStatusMessage,
+            onExportBackupUri = viewModel::exportProgressBackup,
+            onImportBackupUri = viewModel::importProgressBackup,
+            onDismissBackupStatus = viewModel::clearBackupStatus
         )
     }
 }

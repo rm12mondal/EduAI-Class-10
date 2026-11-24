@@ -32,6 +32,8 @@ import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Science
+import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
@@ -92,6 +94,10 @@ fun ModelManagerScreen(
     onRefreshTtsVoices: () -> Unit,
     onClearChatHistory: () -> Unit,
     onDismissStatusBanner: () -> Unit,
+    backupStatusMessage: String? = null,
+    onExportBackupUri: (android.net.Uri) -> Unit = {},
+    onImportBackupUri: (android.net.Uri) -> Unit = {},
+    onDismissBackupStatus: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Zero-permission Android Storage Access Framework (SAF) file picker
@@ -100,6 +106,22 @@ fun ModelManagerScreen(
     ) { uri ->
         if (uri != null) {
             onImportGgufUri(uri)
+        }
+    }
+
+    val createBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            onExportBackupUri(uri)
+        }
+    }
+
+    val restoreBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            onImportBackupUri(uri)
         }
     }
 
@@ -518,6 +540,99 @@ fun ModelManagerScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(stringResource(R.string.model_clear_chat))
+                        }
+                    }
+                }
+            }
+
+            // 6. Offline Study Progress Backup & Restore (EduAI_Backup.json via SAF)
+            item(key = "progress_backup_restore_card") {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Backup,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column {
+                                Text(
+                                    text = "প্রোগ্রেস ব্যাকআপ ও রিস্টোর (১০০% অফলাইন)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "EduAI_Backup.json • পরীক্ষার স্কোর, টপার সেট, ভুলের খাতা, ব্রহ্মাস্ত্রম, রিভিশন ও স্ট্রিক",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (!backupStatusMessage.isNullOrBlank()) {
+                            Surface(
+                                color = SageOfflineContainer,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = backupStatusMessage,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SageOffline,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = onDismissBackupStatus,
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Close", tint = SageOffline, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { createBackupLauncher.launch("EduAI_Backup.json") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("backup_export_btn")
+                            ) {
+                                Icon(Icons.Rounded.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("ব্যাকআপ সেভ", maxLines = 1)
+                            }
+                            OutlinedButton(
+                                onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "*/*")) },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("backup_restore_btn")
+                            ) {
+                                Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("রিস্টোর করুন", maxLines = 1)
+                            }
                         }
                     }
                 }

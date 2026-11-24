@@ -45,12 +45,16 @@ import androidx.compose.material.icons.rounded.AutoGraph
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.OfflineBolt
 import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.Whatshot
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -97,14 +101,24 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.local.ChatMessageEntity
+import com.example.data.local.DailyPlanTaskEntity
+import com.example.data.local.SpacedRevisionEntity
 import com.example.data.media.NotebookImageHelper
+import com.example.model.DailyPlannerUiState
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
+import com.example.model.ScorePredictorSummary
+import com.example.model.SpacedRevisionUiState
 import com.example.model.WbbseSubject
+import com.example.ui.extras.DailyStudyPlannerCard
+import com.example.ui.master.ScorePredictorCard
+import com.example.ui.master.TodayRevisionCapsuleCard
+import com.example.ui.master.TopperAnswerFormatToggleBlock
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.OnlineCobaltContainer
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.SageOfflineContainer
+import com.example.ui.theme.TerracottaAccent
 import com.example.viewmodel.EduAiUiState
 import com.example.viewmodel.PendingPhotoAttachment
 import com.example.viewmodel.StreamingDraft
@@ -112,6 +126,9 @@ import com.example.viewmodel.StreamingDraft
 @Composable
 fun ChatScreen(
     uiState: EduAiUiState,
+    plannerState: DailyPlannerUiState,
+    spacedRevisionState: SpacedRevisionUiState,
+    savedPdfCount: Int,
     onToggleMode: (Boolean) -> Unit,
     onSelectSubject: (WbbseSubject?) -> Unit,
     onSendQuestion: (String) -> Unit,
@@ -125,6 +142,16 @@ fun ChatScreen(
     onClearChat: () -> Unit,
     onOpenModelHub: () -> Unit,
     onOpenSmartLearning: (WbbseSubject?) -> Unit,
+    onOpenPlannerSheet: () -> Unit,
+    onSelectDailyHours: (Int) -> Unit,
+    onToggleDailyTask: (DailyPlanTaskEntity) -> Unit,
+    onLaunchDailyTask: (DailyPlanTaskEntity) -> Unit,
+    onMarkRevisionDone: (SpacedRevisionEntity) -> Unit,
+    onFocusWeakSubject: (WbbseSubject) -> Unit,
+    onOpenBrahmastram: () -> Unit,
+    onOpenPocketBook: () -> Unit,
+    onOpenSavedPdfs: () -> Unit,
+    onExportPdf: (String, String, String, String) -> Unit,
     onShowToast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -188,13 +215,15 @@ fun ChatScreen(
             .background(MaterialTheme.colorScheme.background)
             .imePadding()
     ) {
-        // 1. Header with EduAI branding + Smart Learning launcher + Offline/Online Hybrid Toggle Switch
+        // 1. Header with EduAI branding + Daily Plan pill + Smart Learning launcher + Offline/Online Hybrid Toggle Switch
         HybridChatHeader(
             uiState = uiState,
+            streakDays = plannerState.streak.currentStreak,
             onToggleMode = onToggleMode,
             onClearChat = onClearChat,
             onOpenModelHub = onOpenModelHub,
-            onOpenSmartLearning = { onOpenSmartLearning(uiState.selectedChatSubject) }
+            onOpenSmartLearning = { onOpenSmartLearning(uiState.selectedChatSubject) },
+            onOpenPlannerSheet = onOpenPlannerSheet
         )
 
         // 2. 7-Subject WBBSE Filter Strip
@@ -219,6 +248,18 @@ fun ChatScreen(
                 ChatWelcomeState(
                     selectedSubject = uiState.selectedChatSubject,
                     inferenceMode = uiState.inferenceMode,
+                    plannerState = plannerState,
+                    scorePredictor = uiState.scorePredictor,
+                    spacedRevisionState = spacedRevisionState,
+                    savedPdfCount = savedPdfCount,
+                    onSelectDailyHours = onSelectDailyHours,
+                    onToggleDailyTask = onToggleDailyTask,
+                    onLaunchDailyTask = onLaunchDailyTask,
+                    onMarkRevisionDone = onMarkRevisionDone,
+                    onFocusWeakSubject = onFocusWeakSubject,
+                    onOpenBrahmastram = onOpenBrahmastram,
+                    onOpenPocketBook = onOpenPocketBook,
+                    onOpenSavedPdfs = onOpenSavedPdfs,
                     onQuickPromptClick = { prompt ->
                         onSendQuestion(prompt)
                     },
@@ -249,6 +290,15 @@ fun ChatScreen(
                             onCopyClick = {
                                 clipboard.setText(AnnotatedString(message.content))
                                 onShowToast(copiedToastMsg)
+                            },
+                            onExportPdf = {
+                                val subjName = WbbseSubject.fromId(message.subjectId)?.bengaliName ?: "EduAI"
+                                onExportPdf(
+                                    "${subjName}_চ্যাট_উত্তর_${message.id}",
+                                    "$subjName — AI টিউটর উত্তর",
+                                    message.sourceLabel,
+                                    message.content
+                                )
                             },
                             onZoomDiagram = { path -> zoomedDiagramPath = path }
                         )
@@ -387,10 +437,12 @@ private fun NotebookPhotoSourceDialog(
 @Composable
 private fun HybridChatHeader(
     uiState: EduAiUiState,
+    streakDays: Int,
     onToggleMode: (Boolean) -> Unit,
     onClearChat: () -> Unit,
     onOpenModelHub: () -> Unit,
-    onOpenSmartLearning: () -> Unit
+    onOpenSmartLearning: () -> Unit,
+    onOpenPlannerSheet: () -> Unit
 ) {
     val isOnlineMode = uiState.inferenceMode == InferenceMode.ONLINE
     val pillColor by animateColorAsState(
@@ -468,6 +520,35 @@ private fun HybridChatHeader(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    Surface(
+                        onClick = onOpenPlannerSheet,
+                        shape = RoundedCornerShape(999.dp),
+                        color = TerracottaAccent.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, TerracottaAccent.copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag("home_daily_plan_pill_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.LocalFireDepartment,
+                                contentDescription = "Open Daily Plan",
+                                tint = TerracottaAccent,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "${streakDays} • রুটিন",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TerracottaAccent,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
                     Surface(
                         onClick = onOpenSmartLearning,
                         shape = RoundedCornerShape(999.dp),
@@ -672,6 +753,18 @@ private fun SubjectFilterRow(
 private fun ChatWelcomeState(
     selectedSubject: WbbseSubject?,
     inferenceMode: InferenceMode,
+    plannerState: DailyPlannerUiState,
+    scorePredictor: ScorePredictorSummary,
+    spacedRevisionState: SpacedRevisionUiState,
+    savedPdfCount: Int,
+    onSelectDailyHours: (Int) -> Unit,
+    onToggleDailyTask: (DailyPlanTaskEntity) -> Unit,
+    onLaunchDailyTask: (DailyPlanTaskEntity) -> Unit,
+    onMarkRevisionDone: (SpacedRevisionEntity) -> Unit,
+    onFocusWeakSubject: (WbbseSubject) -> Unit,
+    onOpenBrahmastram: () -> Unit,
+    onOpenPocketBook: () -> Unit,
+    onOpenSavedPdfs: () -> Unit,
     onQuickPromptClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -767,6 +860,138 @@ private fun ChatWelcomeState(
             }
         }
 
+        // Daily Study Planner & Streak Tracker Card on Home Dashboard
+        item(key = "home_daily_study_planner_card") {
+            DailyStudyPlannerCard(
+                state = plannerState,
+                inferenceMode = inferenceMode,
+                onSelectHoursAndGenerate = onSelectDailyHours,
+                onToggleTask = onToggleDailyTask,
+                onLaunchTaskAction = onLaunchDailyTask
+            )
+        }
+
+        // Compact Quick-Launch Row: Brahmastram, Pocket Book & Saved PDF Library
+        item(key = "home_master_quick_launch_row") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = onOpenBrahmastram,
+                    shape = RoundedCornerShape(14.dp),
+                    color = TerracottaAccent.copy(alpha = 0.13f),
+                    border = BorderStroke(1.dp, TerracottaAccent.copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .testTag("home_brahmastram_btn")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Whatshot,
+                            contentDescription = "Brahmastram",
+                            tint = TerracottaAccent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "ব্রহ্মাস্ত্রম",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TerracottaAccent,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onOpenPocketBook,
+                    shape = RoundedCornerShape(14.dp),
+                    color = OnlineCobalt.copy(alpha = 0.13f),
+                    border = BorderStroke(1.dp, OnlineCobalt.copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .testTag("home_pocket_book_btn")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MenuBook,
+                            contentDescription = "Pocket Book",
+                            tint = OnlineCobalt,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "পকেট বুক",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = OnlineCobalt,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onOpenSavedPdfs,
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFFC62828).copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.42f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .minimumInteractiveComponentSize()
+                        .testTag("home_saved_pdfs_btn")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PictureAsPdf,
+                            contentDescription = "Saved PDFs",
+                            tint = Color(0xFFC62828),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "আমার PDF ($savedPdfCount)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFC62828),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // Feature #7: Compact Score Predictor (/700) Card on Home
+        item(key = "home_score_predictor_card") {
+            ScorePredictorCard(
+                summary = scorePredictor,
+                onFocusSubject = onFocusWeakSubject,
+                compact = true
+            )
+        }
+
+        // Feature #9: Today's Spaced Repetition Capsule (3/7/21-day)
+        item(key = "home_spaced_revision_card") {
+            TodayRevisionCapsuleCard(
+                state = spacedRevisionState,
+                onMarkReviewed = onMarkRevisionDone
+            )
+        }
+
         item {
             Text(
                 text = if (selectedSubject != null) {
@@ -819,6 +1044,7 @@ private fun ChatBubbleItem(
     isSpeaking: Boolean,
     onToggleSpeak: () -> Unit,
     onCopyClick: () -> Unit,
+    onExportPdf: () -> Unit,
     onZoomDiagram: (String) -> Unit
 ) {
     val isUser = message.role == "user"
@@ -912,6 +1138,21 @@ private fun ChatBubbleItem(
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
+
+                            IconButton(
+                                onClick = onExportPdf,
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .size(36.dp)
+                                    .testTag("chat_pdf_export_${message.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PictureAsPdf,
+                                    contentDescription = "Save as PDF",
+                                    tint = Color(0xFFC62828),
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
                         }
                     }
                 } else if (subject != null) {
@@ -939,15 +1180,18 @@ private fun ChatBubbleItem(
                     )
                 }
 
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
+                if (!isUser) {
+                    TopperAnswerFormatToggleBlock(
+                        rawAnswer = message.content,
+                        subject = subject
+                    )
+                } else {
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
 
                 if (!isUser) {
                     Row(
