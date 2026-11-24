@@ -23,8 +23,14 @@ import com.example.data.local.SettingsDataStore
 import com.example.data.local.StoredAppSettings
 import com.example.data.local.StudyRepository
 import com.example.data.media.NotebookImageHelper
+import com.example.data.speech.EduSpeechRecognizer
 import com.example.data.speech.EduTtsManager
+import com.example.data.speech.PodcastUiState
+import com.example.data.speech.SpeechRecognitionUiState
 import com.example.data.speech.TtsUiState
+import com.example.data.speech.VoiceInputLanguage
+import com.example.ui.hub.MindMapParser
+import com.example.ui.hub.MindMapTree
 import com.example.model.ActiveExamSession
 import com.example.model.AppTab
 import com.example.model.AudioRevisionUiState
@@ -126,6 +132,7 @@ data class EduAiUiState(
     val chatSmartToThePoint: Boolean = false,
     val chatVisualMode: Boolean = false,
     val chatTranslateMode: Boolean = false,
+    val exactTextbookMode: Boolean = false,
     val chatTargetMarks: Int? = null,
     val ttsState: TtsUiState = TtsUiState(),
     val ttsVoiceSettings: TtsVoiceSettings = TtsVoiceSettings(),
@@ -152,6 +159,7 @@ private data class LocalUiNavigationState(
     val chatSmartToThePoint: Boolean = false,
     val chatVisualMode: Boolean = false,
     val chatTranslateMode: Boolean = false,
+    val exactTextbookMode: Boolean = false,
     val chatTargetMarks: Int? = null,
     val selectedExamSubject: WbbseSubject = WbbseSubject.PHYSICAL_SCIENCE,
     val selectedExamFormat: ExamFormat = ExamFormat.MCQ,
@@ -178,6 +186,27 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     private val ggufModelManager = GgufModelManager(application)
     private val networkMonitor = NetworkMonitor(application)
     private val ttsManager = EduTtsManager(application)
+    val podcastState: StateFlow<PodcastUiState> = ttsManager.podcastState
+
+    private val _voiceInjectedText = MutableStateFlow<String?>(null)
+    val voiceInjectedText: StateFlow<String?> = _voiceInjectedText
+
+    private val _mindMapTree = MutableStateFlow<MindMapTree?>(null)
+    val mindMapTree: StateFlow<MindMapTree?> = _mindMapTree
+
+    private val speechRecognizer = EduSpeechRecognizer(
+        context = application,
+        onFinalTranscript = { spoken ->
+            _voiceInjectedText.value = spoken
+            // If user isn't currently on Smart Learning or Chat, jump to Chat so spoken text appears right away
+            if (!smartLearningState.value.isOpen && localState.value.activeTab != AppTab.CHAT) {
+                closeAllOverlaysForShortcut()
+                localState.update { it.copy(activeTab = AppTab.CHAT) }
+            }
+        }
+    )
+    val speechState: StateFlow<SpeechRecognitionUiState> = speechRecognizer.state
+
     private val aiRepository: AiRepository = HybridEduAiRepository(
         studyRepository = studyRepository,
         ggufModelManager = ggufModelManager
@@ -289,6 +318,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             chatSmartToThePoint = nav.chatSmartToThePoint,
             chatVisualMode = nav.chatVisualMode,
             chatTranslateMode = nav.chatTranslateMode,
+            exactTextbookMode = nav.exactTextbookMode,
             chatTargetMarks = nav.chatTargetMarks,
             ttsState = extra.tts,
             ttsVoiceSettings = data.settings.ttsSettings,
@@ -332,6 +362,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         smartLearningController.stopAll()
         topperExtrasController.stopAll()
         masterUpgradeController.stopAll()
+        speechRecognizer.destroy()
         ttsManager.shutdown()
         super.onCleared()
     }
@@ -374,6 +405,10 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleChatTranslateMode() {
         localState.update { it.copy(chatTranslateMode = !it.chatTranslateMode) }
+    }
+
+    fun toggleExactTextbookMode() {
+        localState.update { it.copy(exactTextbookMode = !it.exactTextbookMode) }
     }
 
     fun setChatTargetMarks(marks: Int?) {
@@ -461,7 +496,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             smartToThePoint = snapshot.chatSmartToThePoint,
             visualDiagramRequested = snapshot.chatVisualMode,
             translateMode = snapshot.chatTranslateMode,
-            targetMarks = snapshot.chatTargetMarks
+            targetMarks = snapshot.chatTargetMarks,
+            exactTextbookDefinition = snapshot.exactTextbookMode
         )
         val analysis = ExamIntentRouter.analyzeForMainChat(effectiveQuery, activeSubject, options)
         val shouldGenerateDiagram = analysis.effectiveVisualDiagram && activeMode == InferenceMode.ONLINE
@@ -745,7 +781,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             smartToThePoint = currentExamChat.smartToThePointMode,
             visualDiagramRequested = currentExamChat.visualDiagramMode,
             translateMode = currentExamChat.translateMode,
-            targetMarks = currentExamChat.targetMarks
+            targetMarks = currentExamChat.targetMarks,
+            exactTextbookDefinition = snapshot.exactTextbookMode
         )
         val analysis = ExamIntentRouter.analyzeForExamChat(
             query = effectiveQuery,
@@ -1583,6 +1620,206 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         masterUpgradeController.openMathSolver(module)
     fun selectMathSolverModule(module: MathSolverModule) = masterUpgradeController.selectMathSolverModule(module)
     fun closeMathSolver() = masterUpgradeController.closeMathSolver()
+
+    // ==================== Floating "D" Action Hub Tools & Shortcuts ====================
+
+    fun setVoiceInputLanguage(language: VoiceInputLanguage) {
+        speechRecognizer.setLanguage(language)
+    }
+
+    fun toggleVoiceListening() {
+        if (speechRecognizer.state.value.isListening) {
+            speechRecognizer.stopListening()
+        } else {
+            ttsManager.pausePodcast()
+            speechRecognizer.startListening()
+        }
+    }
+
+    fun consumeVoiceInjectedText() {
+        _voiceInjectedText.value = null
+    }
+
+    /**
+     * Resolves the latest AI response across Smart Learning, Exam Chat, Main Chat, or verified WBBSE notes.
+     */
+    private fun resolveLatestContentBundle(): Triple<String, String, String> {
+        val slMsg = smartLearningState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (smartLearningState.value.isOpen && slMsg != null) {
+            val subjLabel = slMsg.subject?.bengaliName ?: "স্মার্ট লার্নিং"
+            val title = smartLearningState.value.selectedChapter ?: "$subjLabel AI ব্যাখ্যা"
+            return Triple(title, subjLabel, slMsg.content)
+        }
+
+        val chatMsg = uiState.value.chatMessages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (chatMsg != null) {
+            val subj = WbbseSubject.fromId(chatMsg.subjectId)
+            val subjLabel = subj?.bengaliName ?: "WBBSE Class 10"
+            val title = chatMsg.content.lines().firstOrNull { it.isNotBlank() }
+                ?.replace(Regex("[#*📘🔹🎯📖]"), "")
+                ?.trim()
+                ?.take(48)
+                ?: "$subjLabel নোটস"
+            return Triple(title, subjLabel, chatMsg.content)
+        }
+
+        val examMsg = uiState.value.examChat.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (examMsg != null) {
+            val subjLabel = examMsg.subject?.bengaliName ?: "WBBSE পরীক্ষা"
+            return Triple("$subjLabel AI উত্তর", subjLabel, examMsg.content)
+        }
+
+        val fallbackSubject = uiState.value.selectedChatSubject
+            ?: uiState.value.selectedDetailSubject
+            ?: WbbseSubject.PHYSICAL_SCIENCE
+        val sampleNote = uiState.value.masterNotes.firstOrNull { it.subjectId == fallbackSubject.id && it.importanceLevel == "VVI" }
+            ?: uiState.value.masterNotes.firstOrNull()
+        return if (sampleNote != null) {
+            val body = "${sampleNote.chapterName} — ${sampleNote.topicTitle}\n${sampleNote.content}\n📌 মূল সূত্র ও তথ্য: ${sampleNote.keyFormulaOrFact}\n🎯 পরীক্ষার টিপস: ${sampleNote.examTip}"
+            Triple(sampleNote.topicTitle, fallbackSubject.bengaliName, body)
+        } else {
+            Triple("WBBSE Class 10 স্মার্ট স্টাডি", "WBBSE Class 10", "")
+        }
+    }
+
+    fun openMindMapForLatestAnswer() {
+        val (title, subjLabel, body) = resolveLatestContentBundle()
+        _mindMapTree.value = MindMapParser.parse(
+            rawAnswer = body,
+            fallbackTitle = title,
+            subjectLabel = subjLabel
+        )
+    }
+
+    fun closeMindMap() {
+        _mindMapTree.value = null
+    }
+
+    fun exportMindMapToPdf() {
+        val tree = _mindMapTree.value ?: return
+        val formattedBody = buildString {
+            append("ভিজ্যুয়াল মাইন্ড-ম্যাপ: ${tree.rootTitle}\n")
+            append("বিষয়: ${tree.subjectLabel}\n\n")
+            tree.branches.forEachIndexed { idx, branch ->
+                append("${idx + 1}. ${branch.title}\n")
+                branch.points.forEach { pt -> append("   • $pt\n") }
+                append("\n")
+            }
+        }
+        _mindMapTree.value = null
+        requestPdfExport(
+            suggestedName = "মাইন্ডম্যাপ_${tree.rootTitle.take(24)}",
+            title = tree.rootTitle,
+            subtitle = "${tree.subjectLabel} • ভিজ্যুয়াল মাইন্ড-ম্যাপ",
+            bodyContent = formattedBody
+        )
+    }
+
+    fun toggleQuickPodcastPlayPause() {
+        val pState = ttsManager.podcastState.value
+        when {
+            pState.isPlaying -> ttsManager.pausePodcast()
+            pState.isPaused -> {
+                if (!ttsManager.resumePodcast()) {
+                    startQuickPodcastFromLatest()
+                }
+            }
+            else -> startQuickPodcastFromLatest()
+        }
+    }
+
+    private fun startQuickPodcastFromLatest() {
+        val (title, subjLabel, body) = resolveLatestContentBundle()
+        if (body.isBlank()) {
+            localState.update {
+                it.copy(errorMessage = "পডকাস্ট শোনার জন্য কোনো নোট বা AI উত্তর পাওয়া যায়নি।")
+            }
+            return
+        }
+        val started = ttsManager.startPodcast(
+            title = title,
+            subtitle = "$subjLabel • অফলাইন পডকাস্ট",
+            rawText = body,
+            settings = uiState.value.ttsVoiceSettings,
+            speed = ttsManager.podcastState.value.speed
+        )
+        if (!started) {
+            localState.update {
+                it.copy(errorMessage = "ভয়েস ইঞ্জিন (TTS) প্রস্তুত হচ্ছে, একটু পরে আবার চেষ্টা করো।")
+            }
+        }
+    }
+
+    fun stopQuickPodcast() {
+        ttsManager.stopPodcast()
+    }
+
+    fun setQuickPodcastSpeed(speed: Float) {
+        ttsManager.setPodcastSpeed(speed, uiState.value.ttsVoiceSettings)
+    }
+
+    fun openFullPodcastFromDHub() {
+        val subj = uiState.value.selectedChatSubject
+            ?: uiState.value.selectedDetailSubject
+            ?: WbbseSubject.PHYSICAL_SCIENCE
+        closeAllOverlaysForShortcut()
+        openAudioRevisionForSubject(subj)
+    }
+
+    fun exportLatestToPdfFromDHub() {
+        val (title, subjLabel, body) = resolveLatestContentBundle()
+        if (body.isBlank()) {
+            openSavedPdfLibrary()
+            return
+        }
+        requestPdfExport(
+            suggestedName = "${subjLabel}_${title.take(22)}",
+            title = title,
+            subtitle = "$subjLabel • EduAI স্মার্ট নোটস",
+            bodyContent = body
+        )
+    }
+
+    fun closeAllOverlaysForShortcut() {
+        smartLearningController.closeSmartLearning()
+        topperExtrasController.closeMapBoard()
+        topperExtrasController.closeRapidFire()
+        topperExtrasController.closeAudioRevision()
+        masterUpgradeController.closeSavedPdfLibrary()
+        masterUpgradeController.closeBrahmastram()
+        masterUpgradeController.closePocketBook()
+        masterUpgradeController.closeAiViva()
+        masterUpgradeController.closeConfusionCleaner()
+        masterUpgradeController.closeDiagramLab()
+        masterUpgradeController.closeWritingStudio()
+        masterUpgradeController.closeLanguageLab()
+        masterUpgradeController.closeMathSolver()
+    }
+
+    fun shortcutOpenSmartLearning() {
+        closeAllOverlaysForShortcut()
+        openSmartLearning(subject = uiState.value.selectedChatSubject)
+    }
+
+    fun shortcutOpenBrahmastram() {
+        closeAllOverlaysForShortcut()
+        openBrahmastram(uiState.value.selectedChatSubject ?: WbbseSubject.PHYSICAL_SCIENCE)
+    }
+
+    fun shortcutOpenGrammarLab() {
+        closeAllOverlaysForShortcut()
+        val mode = if (uiState.value.selectedChatSubject == WbbseSubject.ENGLISH) {
+            LanguageLabMode.ENGLISH_LAB
+        } else {
+            LanguageLabMode.BENGALI_GRAMMAR_LAB
+        }
+        openLanguageLab(mode)
+    }
+
+    fun shortcutOpenSettings() {
+        closeAllOverlaysForShortcut()
+        selectTab(AppTab.MODEL_HUB)
+    }
 
     private data class DataBundle(
         val settings: StoredAppSettings,

@@ -7,7 +7,8 @@ data class ChatPromptOptions(
     val smartToThePoint: Boolean = false,
     val visualDiagramRequested: Boolean = false,
     val translateMode: Boolean = false,
-    val targetMarks: Int? = null // 2, 3, 4, 5, or 8
+    val targetMarks: Int? = null, // 2, 3, 4, 5, or 8
+    val exactTextbookDefinition: Boolean = false
 )
 
 /**

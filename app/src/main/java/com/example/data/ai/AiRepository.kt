@@ -8,7 +8,9 @@ import com.example.data.gguf.GgufModelManager
 import com.example.data.gguf.LlamaNativeBridge
 import com.example.data.local.MasterDataEntity
 import com.example.data.local.StudyRepository
+import com.example.data.master.MathUnicodeFormatter
 import com.example.data.master.StrictWbbsePrecisionEngine
+import com.example.data.master.WbbseSyllabusGuard
 import com.example.model.ActiveExamSession
 import com.example.model.ChatPromptOptions
 import com.example.model.ExamChatIntent
@@ -111,7 +113,9 @@ class HybridEduAiRepository(
                         "Life Science (জীবন বিজ্ঞান), History (ইতিহাস), and Geography (ভূগোল). " +
                         "Respond clearly in the student's language (Bengali or English). " +
                         "Include exact formulas, dates, scientific terms, and WBBSE board marking tips. " +
-                        StrictWbbsePrecisionEngine.STRICT_FACT_LOCK_PROMPT_RULE
+                        "Always write math and chemistry notation using clean Unicode symbols (², ³, ₂, ₄, ×, ÷, √, π, θ, Δ) instead of raw LaTeX. " +
+                        StrictWbbsePrecisionEngine.STRICT_FACT_LOCK_PROMPT_RULE + " " +
+                        WbbseSyllabusGuard.STRICT_OUT_OF_SYLLABUS_PROMPT_RULE
                 )
             }
         )
@@ -158,6 +162,18 @@ class HybridEduAiRepository(
     ): Flow<AiStreamEvent> = flow {
         val startMs = System.currentTimeMillis()
         val analysis = ExamIntentRouter.analyzeForMainChat(query, selectedSubject, options)
+
+        // Strict Out-of-Syllabus Guardrail (Online & Offline)
+        if (imageBitmap == null && !analysis.effectiveTranslate && WbbseSyllabusGuard.isClearlyOutOfSyllabus(query)) {
+            emitWordStream(
+                fullText = WbbseSyllabusGuard.OUT_OF_SYLLABUS_FULL_REPLY,
+                sourceLabel = "🛡️ WBBSE সিলেবাস গার্ড",
+                resolvedSubject = null,
+                startMs = startMs
+            )
+            return@flow
+        }
+
         val allNotes = studyRepository.getMasterDataSnapshot(null)
         val targetSubject = selectedSubject ?: analysis.detectedSubject
         val scopedNotes = if (targetSubject != null) {
@@ -185,16 +201,23 @@ class HybridEduAiRepository(
                         config = config,
                         smartToThePoint = analysis.effectiveSmartAnswer,
                         visualRequested = analysis.effectiveVisualDiagram,
-                        targetMarks = analysis.detectedMarks
+                        targetMarks = analysis.detectedMarks,
+                        exactTextbookDefinition = analysis.exactTextbookDefinition
                     )
                 }
 
-                emitWordStream(fullText, sourceLabel, resolvedSubject, startMs)
+                emitWordStream(
+                    MathUnicodeFormatter.format(fullText),
+                    sourceLabel,
+                    resolvedSubject,
+                    startMs
+                )
             }
 
             InferenceMode.ONLINE -> {
                 val sourceLabel = when {
                     imageBitmap != null -> "অনলাইন খাতা মূল্যায়ন • Gemini ($ONLINE_MODEL_NAME)"
+                    analysis.exactTextbookDefinition -> "📖 পাঠ্যবইয়ের হুবহু সংজ্ঞা • WBBSE Gemini"
                     analysis.effectiveTranslate -> "অনলাইন অনুবাদ (বাংলা ↔ English) • Gemini"
                     analysis.effectiveSmartAnswer -> "🎯 টু-দ্য-পয়েন্ট বোর্ড উত্তর • Gemini"
                     analysis.effectiveVisualDiagram -> "🎨 AI ভিজ্যুয়াল ব্যাখ্যা • Gemini"
@@ -286,6 +309,18 @@ class HybridEduAiRepository(
         handwrittenImage: Bitmap?
     ): Flow<AiStreamEvent> = flow {
         val startMs = System.currentTimeMillis()
+
+        // Strict Out-of-Syllabus Guardrail (Online & Offline)
+        if (handwrittenImage == null && analysis.intent != ExamChatIntent.TRANSLATION && WbbseSyllabusGuard.isClearlyOutOfSyllabus(query)) {
+            emitWordStream(
+                fullText = WbbseSyllabusGuard.OUT_OF_SYLLABUS_FULL_REPLY,
+                sourceLabel = "🛡️ WBBSE সিলেবাস গার্ড",
+                resolvedSubject = null,
+                startMs = startMs
+            )
+            return@flow
+        }
+
         val resolvedSubject = analysis.detectedSubject ?: activeSession?.subject
         val allNotes = studyRepository.getMasterDataSnapshot(resolvedSubject?.id)
         val topMatches = rankRelevantNotes(query, allNotes).take(2)
@@ -299,7 +334,7 @@ class HybridEduAiRepository(
                 hasPhoto = handwrittenImage != null,
                 config = config
             )
-            emitWordStream(text, badge, resolvedSubject, startMs)
+            emitWordStream(MathUnicodeFormatter.format(text), badge, resolvedSubject, startMs)
             return@flow
         }
 
@@ -397,7 +432,7 @@ class HybridEduAiRepository(
                         accumulatedText.append(chunkText)
                         emit(
                             AiStreamEvent.Partial(
-                                accumulatedText = accumulatedText.toString(),
+                                accumulatedText = MathUnicodeFormatter.format(accumulatedText.toString()),
                                 sourceLabel = sourceLabel
                             )
                         )
@@ -414,7 +449,7 @@ class HybridEduAiRepository(
             throw e
         }
 
-        val finalText = accumulatedText.toString().trim()
+        val finalText = MathUnicodeFormatter.format(accumulatedText.toString().trim())
         if (finalText.isBlank()) {
             throw IllegalStateException("Gemini কোনো উত্তর দেয়নি। আবার চেষ্টা করো।")
         }
@@ -622,6 +657,14 @@ class HybridEduAiRepository(
             append("\nTRANSLATION MODE (Bengali ↔ English): Provide an accurate, natural WBBSE Class 10 academic translation between Bengali and English, plus 2–3 key vocabulary terms.\n")
         }
 
+        if (analysis.exactTextbookDefinition) {
+            append("\n[EXACT WBBSE TEXTBOOK DEFINITION MODE — STRICT WORD-FOR-WORD]\n")
+            append("- Deliver ONLY the strict, authoritative WBBSE Class 10 (Parshad) textbook definition word-for-word.\n")
+            append("- Include exact SI and CGS standard units, mathematical expression/formula (using clean Unicode symbols like ², ³, ₂, ₄, ×, ÷, √, π, θ, Δ), and dimensional formula where applicable.\n")
+            append("- Include the exact WBBSE chapter name reference.\n")
+            append("- Do NOT include casual stories, greetings, or conversational filler.\n")
+        }
+
         if (analysis.effectiveSmartAnswer) {
             append("\n[SMART EXAM-READY TO-THE-POINT MODE ACTIVE — ZERO FLUFF]\n")
             append("- Eliminate ALL greetings, filler, long introductions, and irrelevant stories.\n")
@@ -803,7 +846,8 @@ class HybridEduAiRepository(
         config: LlamaInferenceConfig,
         smartToThePoint: Boolean = false,
         visualRequested: Boolean = false,
-        targetMarks: Int? = null
+        targetMarks: Int? = null,
+        exactTextbookDefinition: Boolean = false
     ): Pair<String, String> {
         val ggufState = ggufModelManager.state.value
         val activeMeta = ggufState.activeMetadata
@@ -820,10 +864,11 @@ class HybridEduAiRepository(
             null
         }
         if (nativeReply != null) {
-            return nativeReply to "অফলাইন Llama-3.2 GGUF (${activeMeta?.fileName})"
+            return MathUnicodeFormatter.format(nativeReply) to "অফলাইন Llama-3.2 GGUF (${activeMeta?.fileName})"
         }
 
         val sourceBadge = when {
+            exactTextbookDefinition -> "📖 পাঠ্যবইয়ের হুবহু সংজ্ঞা • WBBSE অফলাইন"
             smartToThePoint && isGgufReady -> "🎯 অফলাইন টু-দ্য-পয়েন্ট • GGUF (${activeMeta?.quantizationHint})"
             smartToThePoint -> "🎯 অফলাইন টু-দ্য-পয়েন্ট WBBSE উত্তর"
             isGgufReady -> "অফলাইন WBBSE ডেটা • GGUF (${activeMeta?.quantizationHint})"
@@ -834,7 +879,15 @@ class HybridEduAiRepository(
             val primary = topMatches.first()
             val primarySubject = WbbseSubject.fromId(primary.subjectId)
             buildString {
-                if (smartToThePoint) {
+                if (exactTextbookDefinition) {
+                    append("📖 **পাঠ্যবইয়ের হুবহু সংজ্ঞা (WBBSE পর্ষদ মানক)**\n")
+                    append("📘 অধ্যায় রেফারেন্স: ${primarySubject?.bengaliName ?: "WBBSE"} — ${primary.chapterName}\n\n")
+                    append("🔹 **সংজ্ঞা ও মূল বক্তব্য (${primary.topicTitle}):**\n")
+                    append(primary.content)
+                    append("\n\n📏 **গাণিতিক সূত্র / SI ও CGS মানক একক / মূল তথ্য:**\n")
+                    append(primary.keyFormulaOrFact)
+                    append("\n\n✅ **বোর্ড যাচাই টিপস:** ${primary.examTip}")
+                } else if (smartToThePoint) {
                     append("🎯 **টু-দ্য-পয়েন্ট বোর্ড উত্তর")
                     if (targetMarks != null) append(" (${targetMarks} নম্বর)")
                     append(" — ${primary.topicTitle}**\n")

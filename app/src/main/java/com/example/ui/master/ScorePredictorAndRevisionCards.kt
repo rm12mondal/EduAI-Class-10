@@ -44,7 +44,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.SpacedRevisionEntity
+import com.example.data.master.MathUnicodeFormatter
 import com.example.data.master.StrictWbbsePrecisionEngine
+import com.example.data.master.WbbseSyllabusGuard
 import com.example.model.ScorePredictorSummary
 import com.example.model.SpacedRevisionUiState
 import com.example.model.WbbseSubject
@@ -352,6 +354,52 @@ fun TodayRevisionCapsuleCard(
 }
 
 /**
+ * WBBSE Class 10 Subject / Chapter Reference Badge rendered automatically on every AI response card.
+ */
+@Composable
+fun WbbseReferenceBadgeChip(
+    answerText: String,
+    subject: WbbseSubject?,
+    chapterHint: String? = null,
+    modifier: Modifier = Modifier
+) {
+    val badge = remember(answerText, subject, chapterHint) {
+        WbbseSyllabusGuard.resolveBadge(
+            answerText = answerText,
+            subject = subject,
+            chapterHint = chapterHint
+        )
+    }
+    val bgColor = if (badge.isOutOfSyllabus) {
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.78f)
+    } else {
+        (subject?.accentColor ?: MaterialTheme.colorScheme.primary).copy(alpha = 0.12f)
+    }
+    val fgColor = if (badge.isOutOfSyllabus) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        subject?.accentColor ?: MaterialTheme.colorScheme.primary
+    }
+
+    Surface(
+        shape = RoundedCornerShape(9.dp),
+        color = bgColor,
+        border = BorderStroke(0.8.dp, fgColor.copy(alpha = 0.30f)),
+        modifier = modifier
+    ) {
+        Text(
+            text = badge.labelBn,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = fgColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}
+
+/**
  * Feature #10: "টপারের খাতায় যেভাবে লিখবে"
  * Compact inline toggle on Chat & Smart Learning answers rendering structured
  * ভূমিকা + বোল্ড কীওয়ার্ডসহ পয়েন্ট + ডায়াগ্রাম/ছক + উপসংহার format.
@@ -362,7 +410,7 @@ fun TopperAnswerFormatToggleBlock(
     subject: WbbseSubject?,
     marks: Int = 5
 ) {
-    if (rawAnswer.length < 70) return
+    if (rawAnswer.length < 70 || rawAnswer.contains(WbbseSyllabusGuard.OUT_OF_SYLLABUS_REFUSAL_PREFIX)) return
     var showTopperSheet by remember(rawAnswer) { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -385,7 +433,7 @@ fun TopperAnswerFormatToggleBlock(
                 )
                 Spacer(modifier = Modifier.width(5.dp))
                 Text(
-                    text = if (showTopperSheet) "টপারের খাতা ফরম্যাট লুকান" else "টপারের খাতায় যেভাবে লিখবে (বোর্ড ফরম্যাট)",
+                    text = if (showTopperSheet) "টপারের খাতা লুকান" else "টপারের খাতায় যেভাবে লিখবে (বোর্ড ফরম্যাট)",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -395,7 +443,9 @@ fun TopperAnswerFormatToggleBlock(
 
         AnimatedVisibility(visible = showTopperSheet) {
             val formatted = remember(rawAnswer, subject, marks) {
-                StrictWbbsePrecisionEngine.formatTopperAnswerSheet(rawAnswer, subject, marks)
+                MathUnicodeFormatter.format(
+                    StrictWbbsePrecisionEngine.formatTopperAnswerSheet(rawAnswer, subject, marks)
+                )
             }
             Surface(
                 shape = RoundedCornerShape(12.dp),

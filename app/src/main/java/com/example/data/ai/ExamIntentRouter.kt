@@ -15,7 +15,8 @@ data class RoutedPromptAnalysis(
     val detectedMarks: Int?,
     val chapterHint: String?,
     val pageHint: String?,
-    val recommendedMadhyamikDurationMinutes: Int
+    val recommendedMadhyamikDurationMinutes: Int,
+    val exactTextbookDefinition: Boolean = false
 )
 
 /**
@@ -82,7 +83,8 @@ object ExamIntentRouter {
             detectedMarks = marks,
             chapterHint = extractChapterHint(query),
             pageHint = extractPageHint(query),
-            recommendedMadhyamikDurationMinutes = 60
+            recommendedMadhyamikDurationMinutes = 60,
+            exactTextbookDefinition = options.exactTextbookDefinition
         )
     }
 
@@ -134,7 +136,8 @@ object ExamIntentRouter {
             detectedMarks = marks,
             chapterHint = chapterHint,
             pageHint = pageHint,
-            recommendedMadhyamikDurationMinutes = madhyamikMinutes
+            recommendedMadhyamikDurationMinutes = madhyamikMinutes,
+            exactTextbookDefinition = options.exactTextbookDefinition
         )
     }
 

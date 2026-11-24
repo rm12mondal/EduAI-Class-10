@@ -53,6 +53,8 @@ import com.example.ui.extras.AudioRevisionPlayerModal
 import com.example.ui.extras.DailyPlannerSheetDialog
 import com.example.ui.extras.InteractiveMapBoardScreen
 import com.example.ui.extras.RapidFireScreen
+import com.example.ui.hub.FloatingDActionHub
+import com.example.ui.hub.VisualMindMapModal
 import com.example.ui.learning.SmartLearningScreen
 import com.example.ui.master.AiVivaOralScreen
 import com.example.ui.master.BrahmastramScreen
@@ -140,6 +142,10 @@ fun EduAiApp(
     val languageLabState by viewModel.languageLabState.collectAsStateWithLifecycle()
     val mathSolverState by viewModel.mathSolverState.collectAsStateWithLifecycle()
     val backupStatusMessage by viewModel.backupStatusMessage.collectAsStateWithLifecycle()
+    val speechState by viewModel.speechState.collectAsStateWithLifecycle()
+    val podcastState by viewModel.podcastState.collectAsStateWithLifecycle()
+    val mindMapTree by viewModel.mindMapTree.collectAsStateWithLifecycle()
+    val voiceInjectedText by viewModel.voiceInjectedText.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -448,6 +454,8 @@ fun EduAiApp(
                         onShowSnackbar = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
                         },
+                        voiceInjectedText = voiceInjectedText,
+                        onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
@@ -496,6 +504,7 @@ fun EduAiApp(
                                 spacedRevisionState = spacedRevisionState,
                                 savedPdfCount = pdfState.items.size,
                                 backupStatusMessage = backupStatusMessage,
+                                voiceInjectedText = voiceInjectedText,
                                 viewModel = viewModel,
                                 onShowSnackbar = { msg ->
                                     scope.launch { snackbarHostState.showSnackbar(msg) }
@@ -527,6 +536,39 @@ fun EduAiApp(
                 onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
             )
         }
+
+        // Draggable AssistiveTouch-Style Floating "D" Action Hub
+        FloatingDActionHub(
+            speechState = speechState,
+            exactTextbookMode = uiState.exactTextbookMode,
+            podcastState = podcastState,
+            hasLatestAnswerForMindMap = uiState.chatMessages.any { it.role != "user" } ||
+                smartLearningState.messages.any { it.role != "user" } ||
+                uiState.examChat.messages.any { it.role != "user" },
+            onSelectVoiceLanguage = viewModel::setVoiceInputLanguage,
+            onToggleVoiceListening = viewModel::toggleVoiceListening,
+            onToggleExactTextbookMode = viewModel::toggleExactTextbookMode,
+            onOpenMindMap = viewModel::openMindMapForLatestAnswer,
+            onTogglePodcastPlayPause = viewModel::toggleQuickPodcastPlayPause,
+            onStopPodcast = viewModel::stopQuickPodcast,
+            onSetPodcastSpeed = viewModel::setQuickPodcastSpeed,
+            onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
+            onShortcutSmartLearning = viewModel::shortcutOpenSmartLearning,
+            onShortcutBrahmastram = viewModel::shortcutOpenBrahmastram,
+            onShortcutGrammarLab = viewModel::shortcutOpenGrammarLab,
+            onShortcutExportPdf = viewModel::exportLatestToPdfFromDHub,
+            onShortcutSettings = viewModel::shortcutOpenSettings,
+            onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+        )
+
+        // Interactive Visual Mind-Map / Flowchart Modal
+        mindMapTree?.let { tree ->
+            VisualMindMapModal(
+                tree = tree,
+                onExportPdf = viewModel::exportMindMapToPdf,
+                onDismiss = viewModel::closeMindMap
+            )
+        }
     }
 }
 
@@ -546,6 +588,7 @@ private fun ActiveScreenHost(
     spacedRevisionState: SpacedRevisionUiState,
     savedPdfCount: Int,
     backupStatusMessage: String?,
+    voiceInjectedText: String?,
     viewModel: EduAiViewModel,
     onShowSnackbar: (String) -> Unit
 ) {
@@ -583,7 +626,9 @@ private fun ActiveScreenHost(
             onOpenPocketBook = { viewModel.openPocketBook() },
             onOpenSavedPdfs = viewModel::openSavedPdfLibrary,
             onExportPdf = viewModel::requestPdfExport,
-            onShowToast = onShowSnackbar
+            onShowToast = onShowSnackbar,
+            voiceInjectedText = voiceInjectedText,
+            onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText
         )
 
         AppTab.SUBJECTS -> SubjectsScreen(

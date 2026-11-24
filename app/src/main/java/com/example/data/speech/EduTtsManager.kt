@@ -1,6 +1,7 @@
 package com.example.data.speech
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -21,6 +22,14 @@ data class TtsUiState(
     val availableEnglishVoices: List<TtsVoiceOption> = emptyList()
 )
 
+data class PodcastUiState(
+    val isPlaying: Boolean = false,
+    val isPaused: Boolean = false,
+    val currentTitle: String = "",
+    val currentSubtitle: String = "",
+    val speed: Float = 1.0f
+)
+
 /**
  * Offline-capable Android TextToSpeech controller supporting:
  * - Automatic Bengali (`bn-IN`) and English (`en-US`) language detection
@@ -38,20 +47,60 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
     private val _state = MutableStateFlow(TtsUiState())
     val state: StateFlow<TtsUiState> = _state.asStateFlow()
 
+    private val _podcastState = MutableStateFlow(PodcastUiState())
+    val podcastState: StateFlow<PodcastUiState> = _podcastState.asStateFlow()
+
+    // Chunk-level bookmark for background Podcast Play/Pause/Resume and live speed toggle
+    private var podcastChunks: List<String> = emptyList()
+    private var podcastChunkIndex: Int = 0
+    private var podcastPreferBengali: Boolean = true
+    private var podcastSettings: TtsVoiceSettings = TtsVoiceSettings()
+    private var isPodcastModeActive: Boolean = false
+
     init {
         tts = TextToSpeech(appContext, this)
+        PodcastServiceBridge.onTogglePlayPauseRequested = {
+            if (_podcastState.value.isPlaying) {
+                pausePodcast()
+            } else if (_podcastState.value.isPaused) {
+                resumePodcast()
+            }
+        }
+        PodcastServiceBridge.onStopRequested = {
+            stopPodcast()
+        }
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
+            runCatching {
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+            }
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
+                override fun onStart(utteranceId: String?) {
+                    if (utteranceId != null && utteranceId.startsWith("podcast_chunk_")) {
+                        utteranceId.removePrefix("podcast_chunk_").toIntOrNull()?.let { idx ->
+                            podcastChunkIndex = idx
+                        }
+                    }
+                }
 
                 override fun onDone(utteranceId: String?) {
                     if (utteranceId == lastUtteranceIdForCurrentMessage) {
                         val callback = completionCallback
                         completionCallback = null
                         _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
+                        if (isPodcastModeActive && utteranceId?.startsWith("podcast_chunk_") == true) {
+                            isPodcastModeActive = false
+                            podcastChunkIndex = 0
+                            _podcastState.update { it.copy(isPlaying = false, isPaused = false) }
+                            PodcastAudioService.stopService(appContext)
+                        }
                         callback?.invoke()
                     }
                 }
@@ -60,12 +109,22 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
                 override fun onError(utteranceId: String?) {
                     completionCallback = null
                     _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
+                    if (isPodcastModeActive) {
+                        isPodcastModeActive = false
+                        _podcastState.update { it.copy(isPlaying = false, isPaused = false) }
+                        PodcastAudioService.stopService(appContext)
+                    }
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
                     Log.w(TAG, "TTS utterance error code=$errorCode for $utteranceId")
                     completionCallback = null
                     _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
+                    if (isPodcastModeActive) {
+                        isPodcastModeActive = false
+                        _podcastState.update { it.copy(isPlaying = false, isPaused = false) }
+                        PodcastAudioService.stopService(appContext)
+                    }
                 }
             })
             _state.update { it.copy(isEngineReady = true) }
@@ -217,15 +276,149 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
         )
     }
 
+    /**
+     * Plays a background-capable offline TTS Podcast (continues when screen is locked via PodcastAudioService).
+     */
+    fun startPodcast(
+        title: String,
+        subtitle: String,
+        rawText: String,
+        settings: TtsVoiceSettings,
+        speed: Float = _podcastState.value.speed
+    ): Boolean {
+        val engine = tts ?: return false
+        if (!_state.value.isEngineReady) return false
+
+        val cleaned = sanitizeForSpeech(rawText)
+        if (cleaned.isBlank()) return false
+
+        val chunks = splitIntoChunks(cleaned, maxChunkChars = 340)
+        if (chunks.isEmpty()) return false
+
+        podcastChunks = chunks
+        podcastChunkIndex = 0
+        podcastPreferBengali = detectBengaliScript(cleaned)
+        podcastSettings = settings
+        val safeSpeed = speed.coerceIn(0.75f, 1.5f)
+        _podcastState.value = PodcastUiState(
+            isPlaying = true,
+            isPaused = false,
+            currentTitle = title,
+            currentSubtitle = subtitle,
+            speed = safeSpeed
+        )
+        return speakPodcastFromIndex(engine, startIndex = 0, speed = safeSpeed)
+    }
+
+    fun pausePodcast() {
+        if (!_podcastState.value.isPlaying) return
+        completionCallback = null
+        tts?.stop()
+        lastUtteranceIdForCurrentMessage = null
+        _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
+        _podcastState.update { it.copy(isPlaying = false, isPaused = true) }
+        val snap = _podcastState.value
+        PodcastAudioService.syncState(
+            context = appContext,
+            title = snap.currentTitle.ifBlank { "EduAI পডকাস্ট" },
+            subtitle = snap.currentSubtitle,
+            isPlaying = false,
+            speed = snap.speed
+        )
+    }
+
+    fun resumePodcast(): Boolean {
+        val engine = tts ?: return false
+        if (!_state.value.isEngineReady || podcastChunks.isEmpty()) return false
+        val safeIndex = podcastChunkIndex.coerceIn(0, podcastChunks.lastIndex)
+        val speed = _podcastState.value.speed
+        _podcastState.update { it.copy(isPlaying = true, isPaused = false) }
+        return speakPodcastFromIndex(engine, startIndex = safeIndex, speed = speed)
+    }
+
+    fun setPodcastSpeed(speed: Float, settings: TtsVoiceSettings) {
+        val safeSpeed = speed.coerceIn(0.75f, 1.5f)
+        podcastSettings = settings
+        val wasPlaying = _podcastState.value.isPlaying
+        _podcastState.update { it.copy(speed = safeSpeed) }
+        if (wasPlaying) {
+            val engine = tts ?: return
+            speakPodcastFromIndex(
+                engine = engine,
+                startIndex = podcastChunkIndex.coerceIn(0, (podcastChunks.lastIndex).coerceAtLeast(0)),
+                speed = safeSpeed
+            )
+        }
+    }
+
+    fun stopPodcast() {
+        isPodcastModeActive = false
+        podcastChunks = emptyList()
+        podcastChunkIndex = 0
+        _podcastState.update { it.copy(isPlaying = false, isPaused = false) }
+        PodcastAudioService.stopService(appContext)
+        stop()
+    }
+
+    private fun speakPodcastFromIndex(
+        engine: TextToSpeech,
+        startIndex: Int,
+        speed: Float
+    ): Boolean {
+        if (podcastChunks.isEmpty() || startIndex !in podcastChunks.indices) return false
+
+        val appliedLocaleTag = applyVoiceOrLocale(
+            engine = engine,
+            preferBengali = podcastPreferBengali,
+            preferredVoiceName = if (podcastPreferBengali) podcastSettings.bengaliVoiceName else podcastSettings.englishVoiceName
+        )
+        engine.setSpeechRate(speed.coerceIn(0.75f, 1.5f))
+        engine.setPitch(podcastSettings.pitch.coerceIn(0.8f, 1.2f))
+
+        completionCallback = null
+        engine.stop()
+        isPodcastModeActive = true
+        val lastUid = "podcast_chunk_${podcastChunks.lastIndex}"
+        lastUtteranceIdForCurrentMessage = lastUid
+        _state.update {
+            it.copy(
+                speakingMessageId = PODCAST_MESSAGE_ID,
+                activeLocaleTag = appliedLocaleTag
+            )
+        }
+
+        val snap = _podcastState.value
+        PodcastAudioService.syncState(
+            context = appContext,
+            title = snap.currentTitle.ifBlank { "EduAI পডকাস্ট রিভিশন" },
+            subtitle = snap.currentSubtitle.ifBlank { "অফলাইন অডিও পডকাস্ট" },
+            isPlaying = true,
+            speed = speed
+        )
+
+        for (idx in startIndex..podcastChunks.lastIndex) {
+            val mode = if (idx == startIndex) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            engine.speak(podcastChunks[idx], mode, null, "podcast_chunk_$idx")
+        }
+        return true
+    }
+
     fun stop() {
         completionCallback = null
         tts?.stop()
         lastUtteranceIdForCurrentMessage = null
         _state.update { it.copy(speakingMessageId = null, activeLocaleTag = null) }
+        if (isPodcastModeActive) {
+            isPodcastModeActive = false
+            _podcastState.update { it.copy(isPlaying = false, isPaused = false) }
+            PodcastAudioService.stopService(appContext)
+        }
     }
 
     fun shutdown() {
-        stop()
+        PodcastServiceBridge.onTogglePlayPauseRequested = null
+        PodcastServiceBridge.onStopRequested = null
+        stopPodcast()
         tts?.shutdown()
         tts = null
     }
@@ -374,5 +567,6 @@ class EduTtsManager(context: Context) : TextToSpeech.OnInitListener {
         private const val TAG = "EduTtsManager"
         const val TEST_PREVIEW_BN_ID = -101L
         const val TEST_PREVIEW_EN_ID = -102L
+        const val PODCAST_MESSAGE_ID = -205L
     }
 }

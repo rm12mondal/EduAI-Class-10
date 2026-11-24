@@ -7,6 +7,8 @@ import com.example.data.gguf.GgufModelManager
 import com.example.data.gguf.LlamaNativeBridge
 import com.example.data.local.MasterDataEntity
 import com.example.data.local.StudyRepository
+import com.example.data.master.MathUnicodeFormatter
+import com.example.data.master.WbbseSyllabusGuard
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
@@ -56,8 +58,9 @@ class SmartLearningService(
                         "Always explain in ultra-simple, warm, conversational Bengali (keeping key English scientific/math terms in brackets). " +
                         "Use everyday Bengali real-life examples (like cooking, cricket, bicycle, monsoon rain, school life), " +
                         "short analogies or mini-stories, and clear numbered step-by-step breakdowns. " +
-                        "For math/physics problems, show every algebraic step clearly without skipping lines. " +
-                        "End every explanation with a tiny 2-line '💡 মনে রাখার শর্টকাট' (Easy Recap)."
+                        "For math/physics problems, show every algebraic step clearly without skipping lines using clean Unicode symbols (², ³, ₂, ₄, ×, ÷, √, π, θ, Δ). " +
+                        "End every explanation with a tiny 2-line '💡 মনে রাখার শর্টকাট' (Easy Recap). " +
+                        WbbseSyllabusGuard.STRICT_OUT_OF_SYLLABUS_PROMPT_RULE
                 )
             }
         )
@@ -170,6 +173,18 @@ class SmartLearningService(
         diagramRequested: Boolean
     ): Flow<AiStreamEvent> = flow {
         val startMs = System.currentTimeMillis()
+
+        // Strict Out-of-Syllabus Guardrail (Online & Offline)
+        if (textbookPhoto == null && WbbseSyllabusGuard.isClearlyOutOfSyllabus(query)) {
+            emitWordByWord(
+                fullText = WbbseSyllabusGuard.OUT_OF_SYLLABUS_FULL_REPLY,
+                sourceLabel = "🛡️ WBBSE সিলেবাস গার্ড",
+                resolvedSubject = null,
+                startMs = startMs
+            )
+            return@flow
+        }
+
         val allNotes = studyRepository.getMasterDataSnapshot(null)
         val detectedSubject = selectedSubject ?: detectSubjectFromQuery(query)
         val scopedNotes = if (detectedSubject != null) {
@@ -194,7 +209,7 @@ class SmartLearningService(
                 config = config,
                 diagramRequested = diagramRequested
             )
-            emitWordByWord(offlineText, sourceBadge, resolvedSubject, startMs)
+            emitWordByWord(MathUnicodeFormatter.format(offlineText), sourceBadge, resolvedSubject, startMs)
             return@flow
         }
 
@@ -227,7 +242,7 @@ class SmartLearningService(
                     val piece = chunk.text.orEmpty()
                     if (piece.isNotEmpty()) {
                         accumulated.append(piece)
-                        emit(AiStreamEvent.Partial(accumulated.toString(), sourceLabel))
+                        emit(AiStreamEvent.Partial(MathUnicodeFormatter.format(accumulated.toString()), sourceLabel))
                     }
                 }
             }
@@ -241,7 +256,7 @@ class SmartLearningService(
             throw e
         }
 
-        val finalText = accumulated.toString().trim()
+        val finalText = MathUnicodeFormatter.format(accumulated.toString().trim())
         if (finalText.isBlank()) {
             throw IllegalStateException("AI টিউটর কোনো উত্তর দেয়নি। আবার চেষ্টা করো।")
         }

@@ -90,7 +90,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.ai.ExamIntentRouter
+import com.example.data.master.MathUnicodeFormatter
 import com.example.data.media.NotebookImageHelper
+import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.model.ActiveExamSession
 import com.example.model.ExamChatIntent
 import com.example.model.ExamChatMessage
@@ -789,9 +791,20 @@ private fun ExamChatMessageBubble(
                     }
                 }
 
-                // Message Text
+                // WBBSE Class 10 Subject / Chapter Reference Badge on every AI response card
+                if (!isUser) {
+                    WbbseReferenceBadgeChip(
+                        answerText = message.content,
+                        subject = message.subject
+                    )
+                }
+
+                // Message Text (Unicode-formatted for AI responses)
+                val displayContent = remember(message.content, isUser) {
+                    if (isUser) message.content else MathUnicodeFormatter.format(message.content)
+                }
                 Text(
-                    text = message.content,
+                    text = displayContent,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
                 )
@@ -916,7 +929,7 @@ private fun ExamStreamingDraftBubble(draft: StreamingDraft) {
             }
             if (draft.text.isNotBlank()) {
                 Text(
-                    text = draft.text,
+                    text = MathUnicodeFormatter.format(draft.text),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )

@@ -16,6 +16,7 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.content.FileProvider
+import com.example.data.master.MathUnicodeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -293,8 +294,12 @@ object EduPdfManager {
             strokeWidth = 0.8f
         }
 
+        val cleanTitle = MathUnicodeFormatter.format(title)
+        val cleanSubtitle = MathUnicodeFormatter.format(subtitle)
+        val formattedBody = MathUnicodeFormatter.format(bodyContent)
+
         val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date())
-        val paragraphs = bodyContent.split("\n").map { it.trimEnd() }
+        val paragraphs = formattedBody.split("\n").map { it.trimEnd() }
 
         var pageNumber = 1
         var page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
@@ -305,13 +310,13 @@ object EduPdfManager {
         canvas.drawRoundRect(headerRect, 12f, 12f, headerBgPaint)
         canvas.drawRect(MARGIN_X, MARGIN_TOP + 62f, PAGE_WIDTH - MARGIN_X, MARGIN_TOP + 68f, accentBarPaint)
 
-        val titleLayout = buildStaticLayout(title.take(110), titlePaint, usableWidth - 28)
+        val titleLayout = buildStaticLayout(cleanTitle.take(110), titlePaint, usableWidth - 28)
         canvas.save()
         canvas.translate(MARGIN_X + 14f, MARGIN_TOP + 12f)
         titleLayout.draw(canvas)
         canvas.restore()
 
-        val subText = "${subtitle.take(90)}  •  EduAI Class 10 (WBBSE)  •  $dateStr"
+        val subText = "${cleanSubtitle.take(90)}  •  EduAI Class 10 (WBBSE)  •  $dateStr"
         val subLayout = buildStaticLayout(subText, subtitlePaint, usableWidth - 28)
         canvas.save()
         canvas.translate(MARGIN_X + 14f, MARGIN_TOP + 42f)
@@ -398,7 +403,7 @@ object EduPdfManager {
     }
 
     private fun cleanMarkdownForPdf(raw: String): String {
-        return raw
+        return MathUnicodeFormatter.format(raw)
             .replace("**", "")
             .replace("### ", "■ ")
             .replace("## ", "■ ")

@@ -103,6 +103,7 @@ import com.example.R
 import com.example.data.local.ChatMessageEntity
 import com.example.data.local.DailyPlanTaskEntity
 import com.example.data.local.SpacedRevisionEntity
+import com.example.data.master.MathUnicodeFormatter
 import com.example.data.media.NotebookImageHelper
 import com.example.model.DailyPlannerUiState
 import com.example.model.GgufModelStatus
@@ -114,6 +115,7 @@ import com.example.ui.extras.DailyStudyPlannerCard
 import com.example.ui.master.ScorePredictorCard
 import com.example.ui.master.TodayRevisionCapsuleCard
 import com.example.ui.master.TopperAnswerFormatToggleBlock
+import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.OnlineCobaltContainer
 import com.example.ui.theme.SageOffline
@@ -153,12 +155,21 @@ fun ChatScreen(
     onOpenSavedPdfs: () -> Unit,
     onExportPdf: (String, String, String, String) -> Unit,
     onShowToast: (String) -> Unit,
+    voiceInjectedText: String? = null,
+    onConsumeVoiceInjectedText: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var inputText by rememberSaveable { mutableStateOf("") }
     var showPhotoSourceDialog by remember { mutableStateOf(false) }
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     var zoomedDiagramPath by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(voiceInjectedText) {
+        if (!voiceInjectedText.isNullOrBlank()) {
+            inputText = if (inputText.isBlank()) voiceInjectedText else "$inputText $voiceInjectedText"
+            onConsumeVoiceInjectedText()
+        }
+    }
 
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
@@ -231,6 +242,23 @@ fun ChatScreen(
             selectedSubject = uiState.selectedChatSubject,
             onSelectSubject = onSelectSubject
         )
+
+        if (uiState.exactTextbookMode) {
+            Surface(
+                color = Color(0xFFD97706).copy(alpha = 0.14f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "📖 শুধুমাত্র পাঠ্যবইয়ের সংজ্ঞা মোড চালু (WBBSE হুবহু সংজ্ঞা + মানক একক)",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF92400E),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
 
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant,
@@ -1181,8 +1209,20 @@ private fun ChatBubbleItem(
                 }
 
                 if (!isUser) {
+                    val formattedContent = remember(message.content) {
+                        MathUnicodeFormatter.format(message.content)
+                    }
+                    WbbseReferenceBadgeChip(
+                        answerText = formattedContent,
+                        subject = subject
+                    )
+                    Text(
+                        text = formattedContent,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     TopperAnswerFormatToggleBlock(
-                        rawAnswer = message.content,
+                        rawAnswer = formattedContent,
                         subject = subject
                     )
                 } else {
@@ -1272,7 +1312,11 @@ private fun StreamingBubbleItem(draft: StreamingDraft) {
                     )
                 }
                 Text(
-                    text = draft.text.ifBlank { stringResource(R.string.chat_thinking) },
+                    text = if (draft.text.isBlank()) {
+                        stringResource(R.string.chat_thinking)
+                    } else {
+                        MathUnicodeFormatter.format(draft.text)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )

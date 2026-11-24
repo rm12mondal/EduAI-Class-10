@@ -97,6 +97,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.local.MasterDataEntity
+import com.example.data.master.MathUnicodeFormatter
 import com.example.data.media.NotebookImageHelper
 import com.example.model.InferenceMode
 import com.example.model.SmartLearningMessage
@@ -107,6 +108,7 @@ import com.example.ui.chat.FullScreenDiagramDialog
 import com.example.ui.chat.GeneratedDiagramCard
 import com.example.ui.chat.rememberVoiceInputLauncher
 import com.example.ui.master.TopperAnswerFormatToggleBlock
+import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
@@ -154,6 +156,8 @@ fun SmartLearningScreen(
     onOpenAudioRevision: () -> Unit,
     onExportPdf: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onShowSnackbar: (String) -> Unit,
+    voiceInjectedText: String? = null,
+    onConsumeVoiceInjectedText: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BackHandler { onBack() }
@@ -165,6 +169,13 @@ fun SmartLearningScreen(
     var inputText by rememberSaveable { mutableStateOf("") }
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     var zoomedImagePath by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(voiceInjectedText) {
+        if (!voiceInjectedText.isNullOrBlank()) {
+            inputText = if (inputText.isBlank()) voiceInjectedText else "$inputText $voiceInjectedText"
+            onConsumeVoiceInjectedText()
+        }
+    }
 
     val cameraDeniedMsg = stringResource(R.string.camera_permission_denied)
     val copiedMsg = stringResource(R.string.chat_copied_toast)
@@ -950,10 +961,23 @@ private fun SmartLearningMessageCard(
                     }
                 }
 
-                // Explanation Text (with Topper Answer Format Toggle for assistant responses)
+                // Explanation Text (Unicode-formatted + WBBSE Reference Badge + Topper Answer Format Toggle)
                 if (!isUser) {
+                    val formattedContent = remember(message.content) {
+                        MathUnicodeFormatter.format(message.content)
+                    }
+                    WbbseReferenceBadgeChip(
+                        answerText = formattedContent,
+                        subject = message.subject,
+                        chapterHint = message.chapterName
+                    )
+                    Text(
+                        text = formattedContent,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     TopperAnswerFormatToggleBlock(
-                        rawAnswer = message.content,
+                        rawAnswer = formattedContent,
                         subject = message.subject
                     )
                 } else {
