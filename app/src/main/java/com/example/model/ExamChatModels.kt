@@ -8,7 +8,11 @@ data class ChatPromptOptions(
     val visualDiagramRequested: Boolean = false,
     val translateMode: Boolean = false,
     val targetMarks: Int? = null, // 2, 3, 4, 5, or 8
-    val exactTextbookDefinition: Boolean = false
+    val exactTextbookDefinition: Boolean = false,
+    val targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
+    val syllabusPlanLabel: String = SyllabusPlanOption.MONTHS_3.labelEn,
+    val fastLearningMicroMode: Boolean = false,
+    val sectionContextHint: String = ""
 )
 
 /**

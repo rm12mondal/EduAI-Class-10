@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BrahmastramProgressEntity::class,
         SpacedRevisionEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class EduAiDatabase : RoomDatabase() {
@@ -175,6 +175,14 @@ abstract class EduAiDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE chat_messages ADD COLUMN sectionId TEXT NOT NULL DEFAULT 'main_chat'")
+                db.execSQL("ALTER TABLE chat_messages ADD COLUMN diagramPath TEXT")
+                db.execSQL("ALTER TABLE chat_messages ADD COLUMN topicLabel TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): EduAiDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -187,7 +195,8 @@ abstract class EduAiDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
-                        MIGRATION_5_6
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
                     )
                     .build()
                     .also { INSTANCE = it }

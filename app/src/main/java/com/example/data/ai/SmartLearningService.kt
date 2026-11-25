@@ -9,6 +9,7 @@ import com.example.data.local.MasterDataEntity
 import com.example.data.local.StudyRepository
 import com.example.data.master.MathUnicodeFormatter
 import com.example.data.master.WbbseSyllabusGuard
+import com.example.model.FastLearningContextHelper
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
@@ -16,6 +17,7 @@ import com.example.model.MemorizerPointCard
 import com.example.model.QuickQuizQuestion
 import com.example.model.QuickTopicQuiz
 import com.example.model.SmartMemorizerDeck
+import com.example.model.SyllabusPlanOption
 import com.example.model.WbbseSubject
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
@@ -170,7 +172,9 @@ class SmartLearningService(
         mode: InferenceMode,
         config: LlamaInferenceConfig,
         textbookPhoto: Bitmap?,
-        diagramRequested: Boolean
+        diagramRequested: Boolean,
+        targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
+        syllabusPlanLabel: String = SyllabusPlanOption.MONTHS_3.labelEn
     ): Flow<AiStreamEvent> = flow {
         val startMs = System.currentTimeMillis()
 
@@ -225,7 +229,9 @@ class SmartLearningService(
             chapterName = selectedChapter,
             matchedNotes = matchedNotes,
             hasPhoto = textbookPhoto != null,
-            diagramRequested = diagramRequested
+            diagramRequested = diagramRequested,
+            targetExamYear = targetExamYear,
+            syllabusPlanLabel = syllabusPlanLabel
         )
 
         val inputContent = content {
@@ -481,7 +487,9 @@ class SmartLearningService(
         chapterName: String?,
         matchedNotes: List<MasterDataEntity>,
         hasPhoto: Boolean,
-        diagramRequested: Boolean
+        diagramRequested: Boolean,
+        targetExamYear: Int,
+        syllabusPlanLabel: String
     ): String = buildString {
         append("Subject: ${subject?.let { "${it.bengaliName} (${it.englishName})" } ?: "WBBSE Class 10 (All Subjects)"}\n")
         if (!chapterName.isNullOrBlank()) {
@@ -502,11 +510,18 @@ class SmartLearningService(
             append("\n[VISUAL DIAGRAM BEING GENERATED ALONGSIDE]\n")
             append("- A labeled 2D educational diagram/mind-map is being created right next to your reply. Walk the student through the visual parts step-by-step in simple Bengali.\n")
         }
+        append(
+            FastLearningContextHelper.buildUpcomingExamAiContextBlock(
+                targetExamYear = targetExamYear,
+                syllabusPlanLabel = syllabusPlanLabel,
+                fastMicroMode = false
+            )
+        )
         append("\nRESPONSE FORMAT (Warm, Easy-to-Understand Bengali Tutor):\n")
         append("1. 🌱 সহজ কথায় ব্যাপারটা কী? (1-2 super simple lines)\n")
         append("2. 🚲 বাস্তব জীবনের উদাহরণ (An everyday Bengali real-life story/analogy)\n")
         append("3. 🪜 ধাপে ধাপে ব্যাখ্যা / সমাধান (Clear numbered steps; full formula/derivation if math/science)\n")
-        append("4. 💡 মনে রাখার শর্টকাট (2-line easy recap for Madhyamik exam)\n\n")
+        append("4. 💡 মনে রাখার শর্টকাট (2-line easy recap for Madhyamik $targetExamYear exam)\n\n")
         append("Student asks: $query")
     }
 

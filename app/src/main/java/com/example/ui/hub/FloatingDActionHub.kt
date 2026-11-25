@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Translate
@@ -127,6 +128,7 @@ fun FloatingDActionHub(
     onStopPodcast: () -> Unit,
     onSetPodcastSpeed: (Float) -> Unit,
     onOpenFullPodcastPlayer: () -> Unit,
+    onShortcutFastLearning: () -> Unit,
     onShortcutSmartLearning: () -> Unit,
     onShortcutBrahmastram: () -> Unit,
     onShortcutGrammarLab: () -> Unit,
@@ -286,6 +288,10 @@ fun FloatingDActionHub(
                         onOpenFullPodcastPlayer = {
                             isMenuOpen = false
                             onOpenFullPodcastPlayer()
+                        },
+                        onShortcutFastLearning = {
+                            isMenuOpen = false
+                            onShortcutFastLearning()
                         },
                         onShortcutSmartLearning = {
                             isMenuOpen = false
@@ -463,6 +469,7 @@ private fun DHubPopupMenuCard(
     onStopPodcast: () -> Unit,
     onSetPodcastSpeed: (Float) -> Unit,
     onOpenFullPodcastPlayer: () -> Unit,
+    onShortcutFastLearning: () -> Unit,
     onShortcutSmartLearning: () -> Unit,
     onShortcutBrahmastram: () -> Unit,
     onShortcutGrammarLab: () -> Unit,
@@ -928,6 +935,15 @@ private fun DHubPopupMenuCard(
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
+                )
+
+                DHubShortcutRow(
+                    icon = Icons.Rounded.RocketLaunch,
+                    tint = Color(0xFF0E7490),
+                    title = "🚀 ফাস্ট লার্নিং (Fast Learning)",
+                    subtitle = "VVI ওয়েটেজ সিলেবাস, পরীক্ষার বছর, সেলফ-রিপোর্ট ও চ্যাট",
+                    tag = "d_hub_shortcut_fast_learning",
+                    onClick = onShortcutFastLearning
                 )
 
                 DHubShortcutRow(

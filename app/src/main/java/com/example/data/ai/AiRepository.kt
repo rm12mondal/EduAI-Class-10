@@ -14,6 +14,7 @@ import com.example.data.master.WbbseSyllabusGuard
 import com.example.model.ActiveExamSession
 import com.example.model.ChatPromptOptions
 import com.example.model.ExamChatIntent
+import com.example.model.FastLearningContextHelper
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
@@ -202,7 +203,9 @@ class HybridEduAiRepository(
                         smartToThePoint = analysis.effectiveSmartAnswer,
                         visualRequested = analysis.effectiveVisualDiagram,
                         targetMarks = analysis.detectedMarks,
-                        exactTextbookDefinition = analysis.exactTextbookDefinition
+                        exactTextbookDefinition = analysis.exactTextbookDefinition,
+                        targetExamYear = analysis.targetExamYear,
+                        fastLearningMicroMode = analysis.fastLearningMicroMode
                     )
                 }
 
@@ -217,6 +220,7 @@ class HybridEduAiRepository(
             InferenceMode.ONLINE -> {
                 val sourceLabel = when {
                     imageBitmap != null -> "অনলাইন খাতা মূল্যায়ন • Gemini ($ONLINE_MODEL_NAME)"
+                    analysis.fastLearningMicroMode -> "🚀 ফাস্ট লার্নিং (${analysis.targetExamYear}) • Gemini"
                     analysis.exactTextbookDefinition -> "📖 পাঠ্যবইয়ের হুবহু সংজ্ঞা • WBBSE Gemini"
                     analysis.effectiveTranslate -> "অনলাইন অনুবাদ (বাংলা ↔ English) • Gemini"
                     analysis.effectiveSmartAnswer -> "🎯 টু-দ্য-পয়েন্ট বোর্ড উত্তর • Gemini"
@@ -229,7 +233,10 @@ class HybridEduAiRepository(
                         userPrompt = query,
                         subject = resolvedSubject,
                         smartCondense = analysis.effectiveSmartAnswer,
-                        targetMarks = analysis.detectedMarks
+                        targetMarks = analysis.detectedMarks,
+                        targetExamYear = analysis.targetExamYear,
+                        syllabusPlanLabel = analysis.syllabusPlanLabel,
+                        fastLearningMicroMode = analysis.fastLearningMicroMode
                     )
                     content {
                         image(imageBitmap)
@@ -617,14 +624,26 @@ class HybridEduAiRepository(
         userPrompt: String,
         subject: WbbseSubject?,
         smartCondense: Boolean,
-        targetMarks: Int?
+        targetMarks: Int?,
+        targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
+        syllabusPlanLabel: String = "3 Months",
+        fastLearningMicroMode: Boolean = false
     ): String = buildString {
         val subjectHint = subject?.let { "${it.bengaliName} (${it.englishName})" }
             ?: "WBBSE Class 10 (Madhyamik)"
         append("A West Bengal Board (WBBSE) Class 10 student uploaded this image.\n")
         append("Subject: $subjectHint\n")
+        append(
+            FastLearningContextHelper.buildUpcomingExamAiContextBlock(
+                targetExamYear = targetExamYear,
+                syllabusPlanLabel = syllabusPlanLabel,
+                fastMicroMode = fastLearningMicroMode
+            )
+        )
         append("Student instruction: ${userPrompt.ifBlank { "Evaluate my handwritten answer for WBBSE Class 10." }}\n\n")
-        if (smartCondense) {
+        if (fastLearningMicroMode) {
+            append("FAST LEARNING PHOTO MODE: Read the image (book page, notes, or problem) and turn it into a super-crisp micro-concept summary focused on Madhyamik $targetExamYear board scoring.\n")
+        } else if (smartCondense) {
             append("SMART TO-THE-POINT MODE IS ACTIVE: If the image is a textbook/long note or question, extract and deliver a ZERO-FLUFF, 100% full-marks WBBSE Madhyamik board answer with bold keywords and exact bullet points. ${buildSmartMarksRule(targetMarks)}\n")
             append("If the image is a student's handwritten answer sheet, evaluate it strictly and provide exact marks + crisp full-marks correction.\n")
         } else {
@@ -646,6 +665,16 @@ class HybridEduAiRepository(
         val subjectHint = subject?.let { "${it.bengaliName} (${it.englishName})" }
             ?: "WBBSE Class 10 (All 7 Subjects)"
         append("Subject focus: $subjectHint\n")
+        append(
+            FastLearningContextHelper.buildUpcomingExamAiContextBlock(
+                targetExamYear = analysis.targetExamYear,
+                syllabusPlanLabel = analysis.syllabusPlanLabel,
+                fastMicroMode = analysis.fastLearningMicroMode
+            )
+        )
+        if (analysis.sectionContextHint.isNotBlank()) {
+            append("\n[ACTIVE SECTION CONTEXT]\n${analysis.sectionContextHint}\n")
+        }
         if (topMatches.isNotEmpty()) {
             append("\nRelevant WBBSE Class 10 syllabus reference:\n")
             topMatches.forEach { note ->
@@ -665,7 +694,7 @@ class HybridEduAiRepository(
             append("- Do NOT include casual stories, greetings, or conversational filler.\n")
         }
 
-        if (analysis.effectiveSmartAnswer) {
+        if (analysis.effectiveSmartAnswer && !analysis.fastLearningMicroMode) {
             append("\n[SMART EXAM-READY TO-THE-POINT MODE ACTIVE — ZERO FLUFF]\n")
             append("- Eliminate ALL greetings, filler, long introductions, and irrelevant stories.\n")
             append("- Output ONLY the exact, high-scoring WBBSE Madhyamik board answer structured with numbered/bullet points, **bolded keywords**, exact formulas/dates/diagrams where required.\n")
@@ -694,6 +723,13 @@ class HybridEduAiRepository(
         val subjectLabel = subject?.let { "${it.bengaliName} (${it.englishName})" } ?: "WBBSE Class 10"
         append("You are inside EduAI Class 10's 3-in-1 WBBSE Madhyamik Exam & Quiz Assistant.\n")
         append("Subject: $subjectLabel\n")
+        append(
+            FastLearningContextHelper.buildUpcomingExamAiContextBlock(
+                targetExamYear = analysis.targetExamYear,
+                syllabusPlanLabel = analysis.syllabusPlanLabel,
+                fastMicroMode = false
+            )
+        )
         if (analysis.chapterHint != null) append("Chapter specified: ${analysis.chapterHint}\n")
         if (analysis.pageHint != null) append("Textbook Page specified: ${analysis.pageHint}\n")
         if (activeSession != null) {
@@ -847,7 +883,9 @@ class HybridEduAiRepository(
         smartToThePoint: Boolean = false,
         visualRequested: Boolean = false,
         targetMarks: Int? = null,
-        exactTextbookDefinition: Boolean = false
+        exactTextbookDefinition: Boolean = false,
+        targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
+        fastLearningMicroMode: Boolean = false
     ): Pair<String, String> {
         val ggufState = ggufModelManager.state.value
         val activeMeta = ggufState.activeMetadata
@@ -868,6 +906,7 @@ class HybridEduAiRepository(
         }
 
         val sourceBadge = when {
+            fastLearningMicroMode -> "🚀 ফাস্ট লার্নিং ($targetExamYear) • অফলাইন মাইক্রো-সামারি"
             exactTextbookDefinition -> "📖 পাঠ্যবইয়ের হুবহু সংজ্ঞা • WBBSE অফলাইন"
             smartToThePoint && isGgufReady -> "🎯 অফলাইন টু-দ্য-পয়েন্ট • GGUF (${activeMeta?.quantizationHint})"
             smartToThePoint -> "🎯 অফলাইন টু-দ্য-পয়েন্ট WBBSE উত্তর"
@@ -879,7 +918,24 @@ class HybridEduAiRepository(
             val primary = topMatches.first()
             val primarySubject = WbbseSubject.fromId(primary.subjectId)
             buildString {
-                if (exactTextbookDefinition) {
+                if (fastLearningMicroMode) {
+                    val sentences = primary.content
+                        .split(Regex("[।.!?]+\\s*"))
+                        .map { it.trim() }
+                        .filter { it.length >= 6 }
+                        .take(3)
+                    append("🚀 **ফাস্ট মাইক্রো-সামারি (মাধ্যমিক $targetExamYear টার্গেট)**\n")
+                    append("📘 ${primarySubject?.bengaliName ?: "WBBSE"} • ${primary.chapterName}\n\n")
+                    append("⚡ **৩-লাইনে মূল ধারণা (${primary.topicTitle}):**\n")
+                    if (sentences.isNotEmpty()) {
+                        sentences.forEach { s -> append("• $s।\n") }
+                    } else {
+                        append("• ${primary.content}\n")
+                    }
+                    append("\n📌 **মূল সূত্র / তারিখ / একক:**\n${primary.keyFormulaOrFact}\n")
+                    append("\n🎯 **মাধ্যমিক $targetExamYear সম্ভাব্য বোর্ড ফোকাস:**\n${primary.examTip}\n")
+                    append("\n🕒 আপডেট: ${FastLearningContextHelper.formatCurrentDeviceDateTime()}")
+                } else if (exactTextbookDefinition) {
                     append("📖 **পাঠ্যবইয়ের হুবহু সংজ্ঞা (WBBSE পর্ষদ মানক)**\n")
                     append("📘 অধ্যায় রেফারেন্স: ${primarySubject?.bengaliName ?: "WBBSE"} — ${primary.chapterName}\n\n")
                     append("🔹 **সংজ্ঞা ও মূল বক্তব্য (${primary.topicTitle}):**\n")
@@ -893,7 +949,7 @@ class HybridEduAiRepository(
                     append(" — ${primary.topicTitle}**\n")
                     append("• **মূল পয়েন্ট:** ${primary.content}\n")
                     append("• **অবশ্যই লিখবে (সূত্র/তথ্য):** ${primary.keyFormulaOrFact}\n")
-                    append("• **🏆 বোর্ড টিপস:** ${primary.examTip}")
+                    append("• **🏆 বোর্ড টিপস ($targetExamYear):** ${primary.examTip}")
                 } else {
                     append("📘 ")
                     append(primarySubject?.let { "${it.bengaliName} (${it.englishName})" } ?: "WBBSE ক্লাস ১০")
@@ -902,7 +958,7 @@ class HybridEduAiRepository(
                     append(primary.content)
                     append("\n\n📌 মনে রাখার মূল সূত্র / তথ্য:\n")
                     append(primary.keyFormulaOrFact)
-                    append("\n\n🎯 মাধ্যমিক পরীক্ষার টিপস:\n")
+                    append("\n\n🎯 মাধ্যমিক $targetExamYear পরীক্ষার টিপস:\n")
                     append(primary.examTip)
                 }
 
@@ -910,7 +966,7 @@ class HybridEduAiRepository(
                     append("\n\n🎨 **ভিজ্যুয়াল ডায়াগ্রাম নোট:** AI লেবেলযুক্ত ২ডি ডায়াগ্রাম জেনারেট করতে উপরের সুইচ দিয়ে **অনলাইন মোড (Online)** চালু করে আবার পাঠাও।")
                 }
 
-                if (!isGgufReady && !smartToThePoint) {
+                if (!isGgufReady && !smartToThePoint && !fastLearningMicroMode) {
                     append("\n\n💡 অফলাইন Llama নোট: পূর্ণ অফলাইন জেনারেটিভ উত্তরের জন্য ‘মডেল’ ট্যাবে ${GgufFileInspector.TARGET_MODEL_FILENAME} লোড করুন।")
                 }
             }

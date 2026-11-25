@@ -1,5 +1,6 @@
 package com.example.ui.master
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -25,7 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -67,7 +70,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.model.BrahmastramStep
 import com.example.model.BrahmastramUiState
+import com.example.model.InferenceMode
+import com.example.model.SectionChatUiState
 import com.example.model.WbbseSubject
+import com.example.ui.chat.SectionChatPanel
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -86,7 +92,10 @@ import java.util.Locale
 @Composable
 fun BrahmastramScreen(
     state: BrahmastramUiState,
+    chatState: SectionChatUiState,
+    inferenceMode: InferenceMode,
     speakingMessageId: Long?,
+    voiceInjectedText: String?,
     onSelectSubject: (WbbseSubject) -> Unit,
     onRegenerateNotes: () -> Unit,
     onToggleNoteCompleted: (String) -> Unit,
@@ -97,11 +106,24 @@ fun BrahmastramScreen(
     onUpdateTypedAnswer: (String, String) -> Unit,
     onSubmitExam: () -> Unit,
     onBackToNotes: () -> Unit,
+    onSendChatMessage: (String) -> Unit,
+    onAttachChatPhoto: (Uri) -> Unit,
+    onClearChatPendingPhoto: () -> Unit,
+    onClearChat: () -> Unit,
+    onDismissChatError: () -> Unit,
+    onConsumeVoiceInjectedText: () -> Unit,
+    onShowSnackbar: (String) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showChatView by remember { mutableStateOf(false) }
+
     BackHandler {
-        if (state.currentStep != BrahmastramStep.NOTES) onBackToNotes() else onClose()
+        when {
+            showChatView -> showChatView = false
+            state.currentStep != BrahmastramStep.NOTES -> onBackToNotes()
+            else -> onClose()
+        }
     }
 
     Box(
@@ -133,7 +155,11 @@ fun BrahmastramScreen(
                     ) {
                         IconButton(
                             onClick = {
-                                if (state.currentStep != BrahmastramStep.NOTES) onBackToNotes() else onClose()
+                                when {
+                                    showChatView -> showChatView = false
+                                    state.currentStep != BrahmastramStep.NOTES -> onBackToNotes()
+                                    else -> onClose()
+                                }
                             },
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
@@ -156,7 +182,7 @@ fun BrahmastramScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        if (state.currentStep == BrahmastramStep.EXAM) {
+                        if (state.currentStep == BrahmastramStep.EXAM && !showChatView) {
                             val min = state.remainingSeconds / 60
                             val sec = state.remainingSeconds % 60
                             Surface(
@@ -177,66 +203,125 @@ fun BrahmastramScreen(
                                     )
                                 }
                             }
+                        } else {
+                            // Dedicated Brahmastram Chat Toggle Pill
+                            Surface(
+                                onClick = { showChatView = !showChatView },
+                                color = if (showChatView) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.20f),
+                                shape = RoundedCornerShape(999.dp),
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("brahmastram_toggle_chat_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (showChatView) Icons.Rounded.MenuBook else Icons.Rounded.Chat,
+                                        contentDescription = if (showChatView) "Notes View" else "Brahmastram Chat",
+                                        tint = if (showChatView) Color(0xFF3E0A49) else Color.White,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = if (showChatView) "নোটস" else "চ্যাট (${chatState.messages.size})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (showChatView) Color(0xFF3E0A49) else Color.White
+                                    )
+                                }
+                            }
                         }
                     }
 
                     // 3-Step Visual Stepper Indicator
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        BrahmastramStep.entries.forEach { step ->
-                            val active = state.currentStep == step
-                            Surface(
-                                color = if (active) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.16f),
-                                shape = RoundedCornerShape(999.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = step.titleBn,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (active) Color(0xFF3E0A49) else Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                                )
+                    if (!showChatView) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            BrahmastramStep.entries.forEach { step ->
+                                val active = state.currentStep == step
+                                Surface(
+                                    color = if (active) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.16f),
+                                    shape = RoundedCornerShape(999.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = step.titleBn,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (active) Color(0xFF3E0A49) else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
 
-            when (state.currentStep) {
-                BrahmastramStep.NOTES -> BrahmastramNotesStep(
-                    state = state,
+            if (showChatView) {
+                val starterPrompts = remember(state.selectedSubject) {
+                    val s = state.selectedSubject.bengaliName
+                    listOf(
+                        "$s বিষয়ের ব্রহ্মাস্ত্রম শিওর-শট নোটস থেকে সবচেয়ে গুরুত্বপূর্ণ ৫ নম্বরের প্রশ্নটা বুঝিয়ে দাও।",
+                        "$s বিষয়ের কোন সূত্র বা পয়েন্টগুলো মাধ্যমিকে একদম বাদ দেওয়া যাবে না?",
+                        "$s-এর একটি ব্রহ্মাস্ত্রম সাজেশন উত্তর টপারের খাতার মতো পয়েন্ট করে সাজিয়ে দাও।"
+                    )
+                }
+                SectionChatPanel(
+                    state = chatState,
+                    inferenceMode = inferenceMode,
                     speakingMessageId = speakingMessageId,
-                    onSelectSubject = onSelectSubject,
-                    onRegenerateNotes = onRegenerateNotes,
-                    onToggleNoteCompleted = onToggleNoteCompleted,
+                    accentColor = Color(0xFFAD1457),
+                    starterPrompts = starterPrompts,
+                    onSendMessage = onSendChatMessage,
+                    onAttachPhotoUri = onAttachChatPhoto,
+                    onClearPendingPhoto = onClearChatPendingPhoto,
+                    onClearChat = onClearChat,
                     onToggleSpeak = onToggleSpeak,
-                    onExportNotesPdf = onExportNotesPdf,
-                    onStartTimedExam = onStartTimedExam,
+                    onShowToast = onShowSnackbar,
+                    onDismissError = onDismissChatError,
+                    voiceInjectedText = voiceInjectedText,
+                    onConsumeVoiceInjectedText = onConsumeVoiceInjectedText,
                     modifier = Modifier.weight(1f)
                 )
+            } else {
+                when (state.currentStep) {
+                    BrahmastramStep.NOTES -> BrahmastramNotesStep(
+                        state = state,
+                        speakingMessageId = speakingMessageId,
+                        onSelectSubject = onSelectSubject,
+                        onRegenerateNotes = onRegenerateNotes,
+                        onToggleNoteCompleted = onToggleNoteCompleted,
+                        onToggleSpeak = onToggleSpeak,
+                        onExportNotesPdf = onExportNotesPdf,
+                        onStartTimedExam = onStartTimedExam,
+                        modifier = Modifier.weight(1f)
+                    )
 
-                BrahmastramStep.EXAM -> BrahmastramExamStep(
-                    state = state,
-                    onSelectMcqOption = onSelectMcqOption,
-                    onUpdateTypedAnswer = onUpdateTypedAnswer,
-                    onSubmitExam = onSubmitExam,
-                    modifier = Modifier.weight(1f)
-                )
+                    BrahmastramStep.EXAM -> BrahmastramExamStep(
+                        state = state,
+                        onSelectMcqOption = onSelectMcqOption,
+                        onUpdateTypedAnswer = onUpdateTypedAnswer,
+                        onSubmitExam = onSubmitExam,
+                        modifier = Modifier.weight(1f)
+                    )
 
-                BrahmastramStep.RESULT -> BrahmastramResultStep(
-                    state = state,
-                    onBackToNotes = onBackToNotes,
-                    onRetakeExam = onStartTimedExam,
-                    onExportReportPdf = onExportNotesPdf,
-                    modifier = Modifier.weight(1f)
-                )
+                    BrahmastramStep.RESULT -> BrahmastramResultStep(
+                        state = state,
+                        onBackToNotes = onBackToNotes,
+                        onRetakeExam = onStartTimedExam,
+                        onExportReportPdf = onExportNotesPdf,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }

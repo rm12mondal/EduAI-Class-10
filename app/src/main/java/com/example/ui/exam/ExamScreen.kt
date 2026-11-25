@@ -119,6 +119,8 @@ fun ExamScreen(
     onToggleSpeakMessage: (Long, String) -> Unit,
     onOpenRapidFire: (WbbseSubject?) -> Unit,
     onShowSnackbar: (String) -> Unit,
+    voiceInjectedText: String? = null,
+    onConsumeVoiceInjectedText: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 0 = 3-in-1 Smart Exam Chat, 1 = Offline 252+ Question Bank, 2 = Score & Progress Dashboard
@@ -249,6 +251,8 @@ fun ExamScreen(
                     onSendExamMessage = onSendExamChatMessage,
                     onToggleSpeakMessage = onToggleSpeakMessage,
                     onShowSnackbar = onShowSnackbar,
+                    voiceInjectedText = voiceInjectedText,
+                    onConsumeVoiceInjectedText = onConsumeVoiceInjectedText,
                     modifier = Modifier.weight(1f)
                 )
 

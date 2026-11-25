@@ -43,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
 import com.example.model.AppTab
+import com.example.model.ChatSection
 import com.example.model.DailyPlannerUiState
 import com.example.model.PocketBookCategory
 import com.example.model.SpacedRevisionUiState
@@ -55,6 +56,7 @@ import com.example.ui.extras.InteractiveMapBoardScreen
 import com.example.ui.extras.RapidFireScreen
 import com.example.ui.hub.FloatingDActionHub
 import com.example.ui.hub.VisualMindMapModal
+import com.example.ui.learning.FastLearningScreen
 import com.example.ui.learning.SmartLearningScreen
 import com.example.ui.master.AiVivaOralScreen
 import com.example.ui.master.BrahmastramScreen
@@ -146,10 +148,16 @@ fun EduAiApp(
     val podcastState by viewModel.podcastState.collectAsStateWithLifecycle()
     val mindMapTree by viewModel.mindMapTree.collectAsStateWithLifecycle()
     val voiceInjectedText by viewModel.voiceInjectedText.collectAsStateWithLifecycle()
+    val fastLearningState by viewModel.fastLearningState.collectAsStateWithLifecycle()
+    val allBrahmastramProgress by viewModel.allBrahmastramProgress.collectAsStateWithLifecycle()
+    val brahmastramChatState by viewModel.brahmastramChatState.collectAsStateWithLifecycle()
+    val mindMapChatState by viewModel.mindMapChatState.collectAsStateWithLifecycle()
+    val fastLearningChatState by viewModel.fastLearningChatState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val hasFullScreenOverlay = smartLearningState.isOpen ||
+    val hasFullScreenOverlay = fastLearningState.isOpen ||
+        smartLearningState.isOpen ||
         mapBoardState.isOpen ||
         rapidFireState.isOpen ||
         audioRevisionState.isOpen ||
@@ -290,10 +298,52 @@ fun EduAiApp(
                     )
                 }
 
+                fastLearningState.isOpen -> {
+                    FastLearningScreen(
+                        state = fastLearningState,
+                        chatState = fastLearningChatState,
+                        masterNotes = uiState.masterNotes,
+                        examAttempts = uiState.examAttempts,
+                        brahmastramProgress = allBrahmastramProgress,
+                        inferenceMode = uiState.inferenceMode,
+                        speakingMessageId = uiState.ttsState.speakingMessageId,
+                        voiceInjectedText = voiceInjectedText,
+                        onToggleInferenceMode = viewModel::toggleInferenceMode,
+                        onSelectTab = viewModel::selectFastLearningTab,
+                        onSelectSubject = viewModel::selectFastLearningSubject,
+                        onSelectExamYear = viewModel::setFastLearningExamYear,
+                        onSelectPlan = viewModel::setFastLearningPlan,
+                        onToggleChapterCompleted = viewModel::toggleFastLearningChapterCompleted,
+                        onQuickReviseChapter = viewModel::quickReviseChapterInFastLearning,
+                        onSendChatMessage = { msg ->
+                            viewModel.sendSectionChatMessage(
+                                section = ChatSection.FAST_LEARNING,
+                                rawText = msg,
+                                subject = fastLearningState.selectedSubject,
+                                sectionContextHint = "Fast Learning Hub • Target Madhyamik ${fastLearningState.targetExamYear} (${fastLearningState.syllabusPlan.labelEn})"
+                            )
+                        },
+                        onAttachChatPhoto = { uri -> viewModel.attachSectionChatPhoto(ChatSection.FAST_LEARNING, uri) },
+                        onClearPendingPhoto = { viewModel.clearSectionChatPendingPhoto(ChatSection.FAST_LEARNING) },
+                        onClearChat = { viewModel.clearSectionChat(ChatSection.FAST_LEARNING) },
+                        onToggleSpeak = viewModel::toggleSpeakMessage,
+                        onDismissChatError = { viewModel.dismissSectionChatError(ChatSection.FAST_LEARNING) },
+                        onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
+                        onShowSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        onClose = viewModel::closeFastLearning,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
                 brahmastramState.isOpen -> {
                     BrahmastramScreen(
                         state = brahmastramState,
+                        chatState = brahmastramChatState,
+                        inferenceMode = uiState.inferenceMode,
                         speakingMessageId = uiState.ttsState.speakingMessageId,
+                        voiceInjectedText = voiceInjectedText,
                         onSelectSubject = viewModel::selectBrahmastramSubject,
                         onRegenerateNotes = viewModel::regenerateBrahmastramNotes,
                         onToggleNoteCompleted = viewModel::toggleBrahmastramNoteCompleted,
@@ -306,6 +356,20 @@ fun EduAiApp(
                         onUpdateTypedAnswer = viewModel::updateBrahmastramTypedAnswer,
                         onSubmitExam = viewModel::submitBrahmastramExam,
                         onBackToNotes = viewModel::returnToBrahmastramNotes,
+                        onSendChatMessage = { msg ->
+                            viewModel.sendSectionChatMessage(
+                                section = ChatSection.BRAHMASTRAM,
+                                rawText = msg,
+                                subject = brahmastramState.selectedSubject,
+                                sectionContextHint = "Brahmastram Sure-Shot Suggestions (${brahmastramState.selectedSubject.bengaliName})"
+                            )
+                        },
+                        onAttachChatPhoto = { uri -> viewModel.attachSectionChatPhoto(ChatSection.BRAHMASTRAM, uri) },
+                        onClearChatPendingPhoto = { viewModel.clearSectionChatPendingPhoto(ChatSection.BRAHMASTRAM) },
+                        onClearChat = { viewModel.clearSectionChat(ChatSection.BRAHMASTRAM) },
+                        onDismissChatError = { viewModel.dismissSectionChatError(ChatSection.BRAHMASTRAM) },
+                        onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
+                        onShowSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
                         onClose = viewModel::closeBrahmastram,
                         modifier = Modifier
                             .fillMaxSize()
@@ -544,7 +608,9 @@ fun EduAiApp(
             podcastState = podcastState,
             hasLatestAnswerForMindMap = uiState.chatMessages.any { it.role != "user" } ||
                 smartLearningState.messages.any { it.role != "user" } ||
-                uiState.examChat.messages.any { it.role != "user" },
+                uiState.examChat.messages.any { it.role != "user" } ||
+                fastLearningChatState.messages.any { it.role != "user" } ||
+                brahmastramChatState.messages.any { it.role != "user" },
             onSelectVoiceLanguage = viewModel::setVoiceInputLanguage,
             onToggleVoiceListening = viewModel::toggleVoiceListening,
             onToggleExactTextbookMode = viewModel::toggleExactTextbookMode,
@@ -553,6 +619,7 @@ fun EduAiApp(
             onStopPodcast = viewModel::stopQuickPodcast,
             onSetPodcastSpeed = viewModel::setQuickPodcastSpeed,
             onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
+            onShortcutFastLearning = viewModel::shortcutOpenFastLearning,
             onShortcutSmartLearning = viewModel::shortcutOpenSmartLearning,
             onShortcutBrahmastram = viewModel::shortcutOpenBrahmastram,
             onShortcutGrammarLab = viewModel::shortcutOpenGrammarLab,
@@ -561,11 +628,31 @@ fun EduAiApp(
             onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
         )
 
-        // Interactive Visual Mind-Map / Flowchart Modal
+        // Interactive Visual Mind-Map / Flowchart Modal with Dedicated Persistent Mind-Map Chat
         mindMapTree?.let { tree ->
             VisualMindMapModal(
                 tree = tree,
+                chatState = mindMapChatState,
+                inferenceMode = uiState.inferenceMode,
+                speakingMessageId = uiState.ttsState.speakingMessageId,
+                voiceInjectedText = voiceInjectedText,
                 onExportPdf = viewModel::exportMindMapToPdf,
+                onSendChatMessage = { msg ->
+                    viewModel.sendSectionChatMessage(
+                        section = ChatSection.MIND_MAP,
+                        rawText = msg,
+                        subject = uiState.selectedChatSubject,
+                        sectionContextHint = "Visual Mind-Map Topic: ${tree.rootTitle} (${tree.subjectLabel})"
+                    )
+                },
+                onAttachChatPhoto = { uri -> viewModel.attachSectionChatPhoto(ChatSection.MIND_MAP, uri) },
+                onClearChatPendingPhoto = { viewModel.clearSectionChatPendingPhoto(ChatSection.MIND_MAP) },
+                onClearChat = { viewModel.clearSectionChat(ChatSection.MIND_MAP) },
+                onToggleSpeak = viewModel::toggleSpeakMessage,
+                onDismissChatError = { viewModel.dismissSectionChatError(ChatSection.MIND_MAP) },
+                onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
+                onRebuildMindMapFromReply = viewModel::openMindMapFromText,
+                onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
                 onDismiss = viewModel::closeMindMap
             )
         }
@@ -679,7 +766,9 @@ private fun ActiveScreenHost(
             onSendExamChatMessage = viewModel::sendExamChatMessage,
             onToggleSpeakMessage = viewModel::toggleSpeakMessage,
             onOpenRapidFire = viewModel::openRapidFire,
-            onShowSnackbar = onShowSnackbar
+            onShowSnackbar = onShowSnackbar,
+            voiceInjectedText = voiceInjectedText,
+            onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText
         )
 
         AppTab.TOPPER -> TopperScreen(

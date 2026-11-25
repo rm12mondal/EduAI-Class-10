@@ -35,7 +35,10 @@ data class ChatMessageEntity(
     val sourceLabel: String,
     val latencyMs: Long = 0L,
     val timestamp: Long = System.currentTimeMillis(),
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    val sectionId: String = "main_chat",
+    val diagramPath: String? = null,
+    val topicLabel: String = ""
 )
 
 @Entity(tableName = "exam_attempts")

@@ -50,8 +50,20 @@ interface ChatMessageDao {
     @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC, id ASC")
     fun observeAllMessages(): Flow<List<ChatMessageEntity>>
 
+    @Query("SELECT * FROM chat_messages WHERE sectionId = :sectionId ORDER BY timestamp ASC, id ASC")
+    fun observeMessagesBySection(sectionId: String): Flow<List<ChatMessageEntity>>
+
+    @Query("SELECT * FROM chat_messages WHERE sectionId = :sectionId ORDER BY timestamp ASC, id ASC")
+    suspend fun getMessagesBySectionSnapshot(sectionId: String): List<ChatMessageEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity): Long
+
+    @Query("UPDATE chat_messages SET diagramPath = :diagramPath WHERE id = :id")
+    suspend fun updateDiagramPath(id: Long, diagramPath: String?)
+
+    @Query("DELETE FROM chat_messages WHERE sectionId = :sectionId")
+    suspend fun clearSection(sectionId: String)
 
     @Query("DELETE FROM chat_messages")
     suspend fun clearAll()

@@ -1,5 +1,6 @@
 package com.example.data.local
 
+import com.example.model.ChatSection
 import kotlinx.coroutines.flow.Flow
 
 class StudyRepository(
@@ -11,7 +12,8 @@ class StudyRepository(
     private val masterUpgradeDao: MasterUpgradeDao
 ) {
     val allMasterNotes: Flow<List<MasterDataEntity>> = masterDataDao.observeAll()
-    val allChatMessages: Flow<List<ChatMessageEntity>> = chatMessageDao.observeAllMessages()
+    val allChatMessages: Flow<List<ChatMessageEntity>> =
+        chatMessageDao.observeMessagesBySection(ChatSection.MAIN_CHAT.id)
     val chatMessageCount: Flow<Int> = chatMessageDao.observeCount()
     val allExamAttempts: Flow<List<ExamAttemptEntity>> = examAttemptDao.observeAllAttempts()
     val allTopperSetProgress: Flow<List<TopperSetProgressEntity>> = topperDao.observeAllSetProgress()
@@ -64,12 +66,26 @@ class StudyRepository(
         masterDataDao.deleteUserNote(id)
     }
 
+    fun observeSectionMessages(section: ChatSection): Flow<List<ChatMessageEntity>> =
+        chatMessageDao.observeMessagesBySection(section.id)
+
+    suspend fun getSectionMessagesSnapshot(section: ChatSection): List<ChatMessageEntity> =
+        chatMessageDao.getMessagesBySectionSnapshot(section.id)
+
     suspend fun saveChatMessage(message: ChatMessageEntity): Long {
         return chatMessageDao.insertMessage(message)
     }
 
+    suspend fun updateChatDiagramPath(messageId: Long, diagramPath: String?) {
+        chatMessageDao.updateDiagramPath(messageId, diagramPath)
+    }
+
+    suspend fun clearSectionChat(section: ChatSection) {
+        chatMessageDao.clearSection(section.id)
+    }
+
     suspend fun clearChatHistory() {
-        chatMessageDao.clearAll()
+        chatMessageDao.clearSection(ChatSection.MAIN_CHAT.id)
     }
 
     suspend fun saveExamAttempt(attempt: ExamAttemptEntity): Long {

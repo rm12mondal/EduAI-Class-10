@@ -6,6 +6,9 @@ import com.example.model.ExamChatIntent
 import com.example.model.ExamSessionMode
 import com.example.model.WbbseSubject
 
+import com.example.model.FastLearningContextHelper
+import com.example.model.SyllabusPlanOption
+
 data class RoutedPromptAnalysis(
     val intent: ExamChatIntent,
     val effectiveSmartAnswer: Boolean,
@@ -16,7 +19,11 @@ data class RoutedPromptAnalysis(
     val chapterHint: String?,
     val pageHint: String?,
     val recommendedMadhyamikDurationMinutes: Int,
-    val exactTextbookDefinition: Boolean = false
+    val exactTextbookDefinition: Boolean = false,
+    val targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
+    val syllabusPlanLabel: String = SyllabusPlanOption.MONTHS_3.labelEn,
+    val fastLearningMicroMode: Boolean = false,
+    val sectionContextHint: String = ""
 )
 
 /**
@@ -84,7 +91,11 @@ object ExamIntentRouter {
             chapterHint = extractChapterHint(query),
             pageHint = extractPageHint(query),
             recommendedMadhyamikDurationMinutes = 60,
-            exactTextbookDefinition = options.exactTextbookDefinition
+            exactTextbookDefinition = options.exactTextbookDefinition,
+            targetExamYear = options.targetExamYear,
+            syllabusPlanLabel = options.syllabusPlanLabel,
+            fastLearningMicroMode = options.fastLearningMicroMode,
+            sectionContextHint = options.sectionContextHint
         )
     }
 
@@ -137,7 +148,11 @@ object ExamIntentRouter {
             chapterHint = chapterHint,
             pageHint = pageHint,
             recommendedMadhyamikDurationMinutes = madhyamikMinutes,
-            exactTextbookDefinition = options.exactTextbookDefinition
+            exactTextbookDefinition = options.exactTextbookDefinition,
+            targetExamYear = options.targetExamYear,
+            syllabusPlanLabel = options.syllabusPlanLabel,
+            fastLearningMicroMode = options.fastLearningMicroMode,
+            sectionContextHint = options.sectionContextHint
         )
     }
 

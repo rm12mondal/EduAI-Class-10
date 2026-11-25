@@ -213,6 +213,26 @@ fun ChatScreen(
         }
     }
 
+    fun launchDirectCamera() {
+        val hasCamera = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasCamera) {
+            val uri = NotebookImageHelper.createTempCameraImageUri(context)
+            tempCameraUri = uri
+            takePictureLauncher.launch(uri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    fun launchDirectGallery() {
+        galleryPickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
     val totalItems = uiState.chatMessages.size + if (uiState.streamingDraft != null) 1 else 0
     LaunchedEffect(totalItems, uiState.streamingDraft?.text?.length) {
         if (totalItems > 0) {
@@ -341,7 +361,7 @@ fun ChatScreen(
             }
         }
 
-        // 4. Message Composer Bar with Smart To-The-Point, AI Visual Diagram, Mic & Notebook Photo
+        // 4. Message Composer Bar with Direct Camera, Gallery, Mic, Smart Answer & AI Visual Diagram
         ChatComposerBar(
             value = inputText,
             onValueChange = { inputText = it },
@@ -356,7 +376,8 @@ fun ChatScreen(
             onToggleVisualMode = onToggleVisualMode,
             onToggleTranslateMode = onToggleTranslateMode,
             onSelectMarks = onSelectTargetMarks,
-            onAttachPhotoClick = { showPhotoSourceDialog = true },
+            onCameraClick = ::launchDirectCamera,
+            onGalleryClick = ::launchDirectGallery,
             onVoiceInputClick = launchVoiceInput,
             onClearPhoto = onClearPendingPhoto,
             onSend = {
@@ -607,17 +628,32 @@ private fun HybridChatHeader(
                     }
 
                     if (uiState.chatMessages.isNotEmpty()) {
-                        IconButton(
+                        Surface(
                             onClick = onClearChat,
+                            shape = RoundedCornerShape(999.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
                                 .testTag("clear_chat_button")
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.DeleteSweep,
-                                contentDescription = stringResource(R.string.chat_clear_cd),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteSweep,
+                                    contentDescription = stringResource(R.string.chat_clear_cd),
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "মুছো",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
                         }
                     }
                 }
@@ -1343,7 +1379,8 @@ private fun ChatComposerBar(
     onToggleVisualMode: () -> Unit,
     onToggleTranslateMode: () -> Unit,
     onSelectMarks: (Int?) -> Unit,
-    onAttachPhotoClick: () -> Unit,
+    onCameraClick: () -> Unit,
+    onGalleryClick: () -> Unit,
     onVoiceInputClick: () -> Unit,
     onClearPhoto: () -> Unit,
     onSend: () -> Unit
@@ -1421,15 +1458,15 @@ private fun ChatComposerBar(
                 }
             }
 
-            // Quick Action Icon Bar: Camera + Mic + Dedicated "AI Visual / ছবি দিয়ে বুঝিয়ে দাও" Button
+            // Quick Action Icon Bar: Direct Camera + Direct Gallery + Mic + AI Visual Toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Camera / Gallery Button
+                // Direct Camera Capture Button
                 Surface(
-                    onClick = onAttachPhotoClick,
+                    onClick = onCameraClick,
                     enabled = !isGenerating,
                     shape = CircleShape,
                     color = if (pendingPhoto != null) {
@@ -1439,17 +1476,37 @@ private fun ChatComposerBar(
                     },
                     modifier = Modifier
                         .size(48.dp)
-                        .testTag("chat_attach_photo_button")
+                        .testTag("chat_camera_button")
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Rounded.AddAPhoto,
-                            contentDescription = stringResource(R.string.chat_attach_photo_cd),
+                            imageVector = Icons.Rounded.CameraAlt,
+                            contentDescription = stringResource(R.string.photo_take_camera),
                             tint = if (pendingPhoto != null) {
                                 MaterialTheme.colorScheme.secondary
                             } else {
                                 MaterialTheme.colorScheme.primary
                             },
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Direct Gallery Upload Button
+                Surface(
+                    onClick = onGalleryClick,
+                    enabled = !isGenerating,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("chat_gallery_button")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Rounded.PhotoLibrary,
+                            contentDescription = stringResource(R.string.photo_choose_gallery),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                     }

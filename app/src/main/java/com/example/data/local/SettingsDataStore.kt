@@ -8,8 +8,11 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import com.example.model.FastLearningContextHelper
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
+import com.example.model.SyllabusPlanOption
 import com.example.model.TtsVoiceSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -22,7 +25,10 @@ data class StoredAppSettings(
     val inferenceMode: InferenceMode = InferenceMode.OFFLINE,
     val activeModelPath: String? = null,
     val llamaConfig: LlamaInferenceConfig = LlamaInferenceConfig(),
-    val ttsSettings: TtsVoiceSettings = TtsVoiceSettings()
+    val ttsSettings: TtsVoiceSettings = TtsVoiceSettings(),
+    val fastLearningExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
+    val fastLearningPlanMonths: Float = SyllabusPlanOption.MONTHS_3.months,
+    val fastLearningCompletedChapters: Set<String> = emptySet()
 )
 
 class SettingsDataStore(private val context: Context) {
@@ -39,6 +45,10 @@ class SettingsDataStore(private val context: Context) {
         val TTS_ENGLISH_VOICE = stringPreferencesKey("tts_english_voice_name")
         val TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
         val TTS_PITCH = floatPreferencesKey("tts_pitch")
+
+        val FAST_LEARNING_EXAM_YEAR = intPreferencesKey("fast_learning_exam_year")
+        val FAST_LEARNING_PLAN_MONTHS = floatPreferencesKey("fast_learning_plan_months")
+        val FAST_LEARNING_COMPLETED_CHAPTERS = stringSetPreferencesKey("fast_learning_completed_chapters")
     }
 
     val settingsFlow: Flow<StoredAppSettings> = context.eduAiDataStore.data.map { prefs ->
@@ -56,7 +66,13 @@ class SettingsDataStore(private val context: Context) {
                 englishVoiceName = prefs[Keys.TTS_ENGLISH_VOICE],
                 speechRate = (prefs[Keys.TTS_SPEECH_RATE] ?: 1.0f).coerceIn(0.7f, 1.5f),
                 pitch = (prefs[Keys.TTS_PITCH] ?: 1.0f).coerceIn(0.8f, 1.2f)
-            )
+            ),
+            fastLearningExamYear = prefs[Keys.FAST_LEARNING_EXAM_YEAR]
+                ?: FastLearningContextHelper.defaultTargetExamYear(),
+            fastLearningPlanMonths = prefs[Keys.FAST_LEARNING_PLAN_MONTHS]
+                ?: SyllabusPlanOption.MONTHS_3.months,
+            fastLearningCompletedChapters = prefs[Keys.FAST_LEARNING_COMPLETED_CHAPTERS]
+                ?: emptySet()
         )
     }
 
@@ -99,6 +115,29 @@ class SettingsDataStore(private val context: Context) {
             }
             prefs[Keys.TTS_SPEECH_RATE] = settings.speechRate.coerceIn(0.7f, 1.5f)
             prefs[Keys.TTS_PITCH] = settings.pitch.coerceIn(0.8f, 1.2f)
+        }
+    }
+
+    suspend fun setFastLearningExamYear(year: Int) {
+        context.eduAiDataStore.edit { prefs ->
+            prefs[Keys.FAST_LEARNING_EXAM_YEAR] = year
+        }
+    }
+
+    suspend fun setFastLearningPlanMonths(months: Float) {
+        context.eduAiDataStore.edit { prefs ->
+            prefs[Keys.FAST_LEARNING_PLAN_MONTHS] = months
+        }
+    }
+
+    suspend fun toggleFastLearningChapter(chapterKey: String) {
+        context.eduAiDataStore.edit { prefs ->
+            val current = prefs[Keys.FAST_LEARNING_COMPLETED_CHAPTERS] ?: emptySet()
+            prefs[Keys.FAST_LEARNING_COMPLETED_CHAPTERS] = if (chapterKey in current) {
+                current - chapterKey
+            } else {
+                current + chapterKey
+            }
         }
     }
 }

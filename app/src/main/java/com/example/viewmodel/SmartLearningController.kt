@@ -6,14 +6,18 @@ import android.util.Log
 import com.example.data.ai.AiRepository
 import com.example.data.ai.AiStreamEvent
 import com.example.data.ai.SmartLearningService
+import com.example.data.local.ChatMessageEntity
 import com.example.data.local.ExamAttemptEntity
 import com.example.data.local.MasterDataEntity
 import com.example.data.local.StudyRepository
 import com.example.data.media.NotebookImageHelper
+import com.example.model.ChatSection
+import com.example.model.FastLearningContextHelper
 import com.example.model.InferenceMode
 import com.example.model.LlamaInferenceConfig
 import com.example.model.SmartLearningMessage
 import com.example.model.SmartLearningUiState
+import com.example.model.SyllabusPlanOption
 import com.example.model.WbbseSubject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +47,9 @@ class SmartLearningController(
     private val scope: CoroutineScope,
     private val studyRepository: StudyRepository,
     private val aiRepository: AiRepository,
-    private val smartLearningService: SmartLearningService
+    private val smartLearningService: SmartLearningService,
+    private val getTargetExamYear: () -> Int = { FastLearningContextHelper.defaultTargetExamYear() },
+    private val getSyllabusPlanLabel: () -> String = { SyllabusPlanOption.MONTHS_3.labelEn }
 ) {
     private val _uiState = MutableStateFlow(SmartLearningUiState())
     val uiState: StateFlow<SmartLearningUiState> = _uiState.asStateFlow()
@@ -51,6 +57,32 @@ class SmartLearningController(
     private var tutorJob: Job? = null
     private var quizTimerJob: Job? = null
     private var nextMessageId: Long = 50_000L
+
+    init {
+        scope.launch {
+            val saved = studyRepository.getSectionMessagesSnapshot(ChatSection.SMART_LEARNING)
+            if (saved.isNotEmpty()) {
+                val restored = saved.map { entity ->
+                    SmartLearningMessage(
+                        id = entity.id,
+                        role = entity.role,
+                        content = entity.content,
+                        topicLabel = entity.topicLabel.ifBlank { entity.content.take(48) },
+                        subject = WbbseSubject.fromId(entity.subjectId),
+                        chapterName = entity.topicLabel.takeIf { it.isNotBlank() },
+                        mode = InferenceMode.fromStorage(entity.mode),
+                        sourceLabel = entity.sourceLabel,
+                        userPhotoPath = entity.imagePath,
+                        generatedDiagramPath = entity.diagramPath,
+                        timestamp = entity.timestamp
+                    )
+                }
+                val maxId = restored.maxOfOrNull { it.id } ?: 50_000L
+                if (maxId >= nextMessageId) nextMessageId = maxId + 1
+                _uiState.update { it.copy(messages = restored) }
+            }
+        }
+    }
 
     fun openSmartLearning(
         subject: WbbseSubject? = null,
@@ -158,6 +190,9 @@ class SmartLearningController(
     fun clearSession() {
         tutorJob?.cancel()
         quizTimerJob?.cancel()
+        scope.launch {
+            studyRepository.clearSectionChat(ChatSection.SMART_LEARNING)
+        }
         _uiState.update {
             it.copy(
                 messages = emptyList(),
@@ -203,11 +238,26 @@ class SmartLearningController(
                 NotebookImageHelper.persistThumbnail(appContext, pendingPhoto.previewBitmap)
             } else null
 
+            val userTopicLabel = chapter ?: effectiveQuery.take(48)
+            val persistedUserId = studyRepository.saveChatMessage(
+                ChatMessageEntity(
+                    role = "user",
+                    content = effectiveQuery,
+                    subjectId = subject?.id,
+                    mode = inferenceMode.storageValue,
+                    sourceLabel = subject?.bengaliName ?: "স্মার্ট লার্নিং",
+                    imagePath = savedPhotoPath,
+                    sectionId = ChatSection.SMART_LEARNING.id,
+                    topicLabel = userTopicLabel
+                )
+            )
+            if (persistedUserId >= nextMessageId) nextMessageId = persistedUserId + 1
+
             val userMsg = SmartLearningMessage(
-                id = ++nextMessageId,
+                id = persistedUserId,
                 role = "user",
                 content = effectiveQuery,
-                topicLabel = chapter ?: effectiveQuery.take(48),
+                topicLabel = userTopicLabel,
                 subject = subject,
                 chapterName = chapter,
                 mode = inferenceMode,
@@ -249,7 +299,9 @@ class SmartLearningController(
                     mode = inferenceMode,
                     config = llamaConfig,
                     textbookPhoto = if (inferenceMode == InferenceMode.ONLINE) pendingPhoto?.previewBitmap else null,
-                    diagramRequested = current.generateDiagramToggle || autoDiagram
+                    diagramRequested = current.generateDiagramToggle || autoDiagram,
+                    targetExamYear = getTargetExamYear(),
+                    syllabusPlanLabel = getSyllabusPlanLabel()
                 ).collect { event ->
                     when (event) {
                         is AiStreamEvent.Partial -> {
@@ -305,8 +357,23 @@ class SmartLearningController(
                 val topicTitle = chapter?.takeIf { it.isNotBlank() }
                     ?: effectiveQuery.take(54)
 
+                val persistedAssistantId = studyRepository.saveChatMessage(
+                    ChatMessageEntity(
+                        role = "assistant",
+                        content = finalEvent.fullText,
+                        subjectId = resolvedSubject?.id,
+                        mode = inferenceMode.storageValue,
+                        sourceLabel = finalEvent.sourceLabel,
+                        latencyMs = finalEvent.latencyMs,
+                        sectionId = ChatSection.SMART_LEARNING.id,
+                        diagramPath = diagramPath,
+                        topicLabel = topicTitle
+                    )
+                )
+                if (persistedAssistantId >= nextMessageId) nextMessageId = persistedAssistantId + 1
+
                 val assistantMsg = SmartLearningMessage(
-                    id = ++nextMessageId,
+                    id = persistedAssistantId,
                     role = "assistant",
                     content = finalEvent.fullText,
                     topicLabel = topicTitle,
@@ -375,6 +442,7 @@ class SmartLearningController(
                     mode = inferenceMode
                 )
                 val path = NotebookImageHelper.persistVisualDiagram(appContext, bmp)
+                studyRepository.updateChatDiagramPath(message.id, path)
                 _uiState.update { s ->
                     s.copy(
                         messages = s.messages.map {

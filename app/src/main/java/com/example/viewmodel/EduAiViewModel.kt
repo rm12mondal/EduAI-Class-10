@@ -53,13 +53,18 @@ import com.example.model.SmartLearningUiState
 import com.example.model.SubjectProgressSummary
 import com.example.model.SubjectiveEvaluationResult
 import com.example.model.TimingBucket
+import com.example.data.local.BrahmastramProgressEntity
 import com.example.data.local.SpacedRevisionEntity
 import com.example.data.master.StrictWbbsePrecisionEngine
 import com.example.data.pdf.SavedPdfItem
 import com.example.model.AiVivaUiState
 import com.example.model.BrahmastramUiState
+import com.example.model.ChatSection
 import com.example.model.ConfusionCleanerUiState
 import com.example.model.DiagramLabUiState
+import com.example.model.FastLearningChapterItem
+import com.example.model.FastLearningContextHelper
+import com.example.model.FastLearningUiState
 import com.example.model.LanguageLabMode
 import com.example.model.LanguageLabUiState
 import com.example.model.MathSolverModule
@@ -68,7 +73,9 @@ import com.example.model.PocketBookCategory
 import com.example.model.PocketBookUiState
 import com.example.model.SavedPdfLibraryUiState
 import com.example.model.ScorePredictorSummary
+import com.example.model.SectionChatUiState
 import com.example.model.SpacedRevisionUiState
+import com.example.model.SyllabusPlanOption
 import com.example.model.TopperSectionType
 import com.example.model.TopperSubjectTrack
 import com.example.model.TtsVoiceSettings
@@ -170,6 +177,12 @@ private data class LocalUiNavigationState(
     val errorMessage: String? = null
 )
 
+private data class FastLearningLocalNav(
+    val isOpen: Boolean = false,
+    val activeTabIndex: Int = 0,
+    val selectedSubject: WbbseSubject? = null
+)
+
 class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
     private val appContext = application.applicationContext
@@ -194,12 +207,44 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     private val _mindMapTree = MutableStateFlow<MindMapTree?>(null)
     val mindMapTree: StateFlow<MindMapTree?> = _mindMapTree
 
+    private val _fastLearningLocalNav = MutableStateFlow(FastLearningLocalNav())
+    val fastLearningState: StateFlow<FastLearningUiState> = combine(
+        _fastLearningLocalNav,
+        settingsDataStore.settingsFlow
+    ) { nav, stored ->
+        FastLearningUiState(
+            isOpen = nav.isOpen,
+            activeTabIndex = nav.activeTabIndex,
+            selectedSubject = nav.selectedSubject,
+            targetExamYear = stored.fastLearningExamYear,
+            availableExamYears = FastLearningContextHelper.availableExamYears(),
+            syllabusPlan = SyllabusPlanOption.fromMonths(stored.fastLearningPlanMonths),
+            completedChapterKeys = stored.fastLearningCompletedChapters
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000L),
+        initialValue = FastLearningUiState()
+    )
+
+    val allBrahmastramProgress: StateFlow<List<BrahmastramProgressEntity>> =
+        studyRepository.allBrahmastramProgress.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = emptyList()
+        )
+
     private val speechRecognizer = EduSpeechRecognizer(
         context = application,
         onFinalTranscript = { spoken ->
             _voiceInjectedText.value = spoken
-            // If user isn't currently on Smart Learning or Chat, jump to Chat so spoken text appears right away
-            if (!smartLearningState.value.isOpen && localState.value.activeTab != AppTab.CHAT) {
+            val inActiveChatContext = fastLearningState.value.isOpen ||
+                brahmastramState.value.isOpen ||
+                mindMapTree.value != null ||
+                smartLearningState.value.isOpen ||
+                localState.value.activeTab == AppTab.EXAMS ||
+                localState.value.activeTab == AppTab.CHAT
+            if (!inActiveChatContext) {
                 closeAllOverlaysForShortcut()
                 localState.update { it.copy(activeTab = AppTab.CHAT) }
             }
@@ -211,6 +256,22 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         studyRepository = studyRepository,
         ggufModelManager = ggufModelManager
     )
+
+    private val sectionChatController = SectionChatController(
+        appContext = appContext,
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        aiRepository = aiRepository,
+        getInferenceMode = { uiState.value.inferenceMode },
+        getLlamaConfig = { uiState.value.llamaConfig },
+        getExactTextbookMode = { uiState.value.exactTextbookMode },
+        getTargetExamYear = { fastLearningState.value.targetExamYear },
+        getSyllabusPlanLabel = { fastLearningState.value.syllabusPlan.labelEn }
+    )
+
+    val brahmastramChatState: StateFlow<SectionChatUiState> = sectionChatController.brahmastramChatState
+    val mindMapChatState: StateFlow<SectionChatUiState> = sectionChatController.mindMapChatState
+    val fastLearningChatState: StateFlow<SectionChatUiState> = sectionChatController.fastLearningChatState
 
     private val topperController = TopperController(
         appContext = appContext,
@@ -231,7 +292,9 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         scope = viewModelScope,
         studyRepository = studyRepository,
         aiRepository = aiRepository,
-        smartLearningService = smartLearningService
+        smartLearningService = smartLearningService,
+        getTargetExamYear = { fastLearningState.value.targetExamYear },
+        getSyllabusPlanLabel = { fastLearningState.value.syllabusPlan.labelEn }
     )
 
     val smartLearningState: StateFlow<SmartLearningUiState> = smartLearningController.uiState
@@ -342,6 +405,30 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             studyRepository.ensureSeeded()
+            // Restore persisted Mock Exam chat messages from Room
+            val savedExamMsgs = studyRepository.getSectionMessagesSnapshot(ChatSection.MOCK_EXAM)
+            if (savedExamMsgs.isNotEmpty()) {
+                val restoredExamMsgs = savedExamMsgs.map { entity ->
+                    val restoredIntent = ExamChatIntent.entries.firstOrNull { it.name == entity.topicLabel }
+                        ?: ExamChatIntent.DIRECT_STUDY
+                    ExamChatMessage(
+                        id = entity.id,
+                        role = entity.role,
+                        content = entity.content,
+                        intent = restoredIntent,
+                        subject = WbbseSubject.fromId(entity.subjectId),
+                        mode = InferenceMode.fromStorage(entity.mode),
+                        sourceLabel = entity.sourceLabel,
+                        userPhotoPath = entity.imagePath,
+                        generatedDiagramPath = entity.diagramPath,
+                        latencyMs = entity.latencyMs,
+                        timestamp = entity.timestamp
+                    )
+                }
+                localState.update { state ->
+                    state.copy(examChat = state.examChat.copy(messages = restoredExamMsgs))
+                }
+            }
             val allNotesSnapshot = studyRepository.getMasterDataSnapshot(null)
             topperExtrasController.ensureTodayPlanInitialized(allNotesSnapshot)
             masterUpgradeController.ensureSpacedRevisionSeeded(allNotesSnapshot)
@@ -358,6 +445,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         examHallTimerJob?.cancel()
+        sectionChatController.stopAll()
         topperController.stopTimer()
         smartLearningController.stopAll()
         topperExtrasController.stopAll()
@@ -492,12 +580,15 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         val activeSubject = explicitSubject ?: snapshot.selectedChatSubject
         val activeMode = snapshot.inferenceMode
         val config = snapshot.llamaConfig
+        val flSnapshot = fastLearningState.value
         val options = ChatPromptOptions(
             smartToThePoint = snapshot.chatSmartToThePoint,
             visualDiagramRequested = snapshot.chatVisualMode,
             translateMode = snapshot.chatTranslateMode,
             targetMarks = snapshot.chatTargetMarks,
-            exactTextbookDefinition = snapshot.exactTextbookMode
+            exactTextbookDefinition = snapshot.exactTextbookMode,
+            targetExamYear = flSnapshot.targetExamYear,
+            syllabusPlanLabel = flSnapshot.syllabusPlan.labelEn
         )
         val analysis = ExamIntentRouter.analyzeForMainChat(effectiveQuery, activeSubject, options)
         val shouldGenerateDiagram = analysis.effectiveVisualDiagram && activeMode == InferenceMode.ONLINE
@@ -751,16 +842,19 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         ttsManager.stop()
         examChatJob?.cancel()
         examHallTimerJob?.cancel()
-        localState.update { state ->
-            state.copy(
-                examChat = state.examChat.copy(
-                    messages = emptyList(),
-                    streamingDraft = null,
-                    isGenerating = false,
-                    pendingPhoto = null,
-                    activeSession = null
+        viewModelScope.launch {
+            studyRepository.clearSectionChat(ChatSection.MOCK_EXAM)
+            localState.update { state ->
+                state.copy(
+                    examChat = state.examChat.copy(
+                        messages = emptyList(),
+                        streamingDraft = null,
+                        isGenerating = false,
+                        pendingPhoto = null,
+                        activeSession = null
+                    )
                 )
-            )
+            }
         }
     }
 
@@ -776,13 +870,16 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val snapshot = uiState.value
+        val flSnapshot = fastLearningState.value
         val activeMode = snapshot.inferenceMode
         val options = ChatPromptOptions(
             smartToThePoint = currentExamChat.smartToThePointMode,
             visualDiagramRequested = currentExamChat.visualDiagramMode,
             translateMode = currentExamChat.translateMode,
             targetMarks = currentExamChat.targetMarks,
-            exactTextbookDefinition = snapshot.exactTextbookMode
+            exactTextbookDefinition = snapshot.exactTextbookMode,
+            targetExamYear = flSnapshot.targetExamYear,
+            syllabusPlanLabel = flSnapshot.syllabusPlan.labelEn
         )
         val analysis = ExamIntentRouter.analyzeForExamChat(
             query = effectiveQuery,
@@ -840,8 +937,21 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
                 NotebookImageHelper.persistThumbnail(appContext, it.previewBitmap)
             }
 
+            val savedUserId = studyRepository.saveChatMessage(
+                ChatMessageEntity(
+                    role = "user",
+                    content = effectiveQuery,
+                    subjectId = resolvedSubject.id,
+                    mode = activeMode.storageValue,
+                    sourceLabel = analysis.intent.badgeBn,
+                    imagePath = savedPhotoPath,
+                    sectionId = ChatSection.MOCK_EXAM.id,
+                    topicLabel = analysis.intent.name
+                )
+            )
+
             val userMsg = ExamChatMessage(
-                id = ++nextExamChatMsgId,
+                id = if (savedUserId > 0L) savedUserId else ++nextExamChatMsgId,
                 role = "user",
                 content = effectiveQuery,
                 intent = analysis.intent,
@@ -934,8 +1044,22 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                val savedAssistantId = studyRepository.saveChatMessage(
+                    ChatMessageEntity(
+                        role = "assistant",
+                        content = finalEvent.fullText,
+                        subjectId = (finalEvent.resolvedSubject ?: resolvedSubject).id,
+                        mode = activeMode.storageValue,
+                        sourceLabel = finalEvent.sourceLabel,
+                        latencyMs = finalEvent.latencyMs,
+                        sectionId = ChatSection.MOCK_EXAM.id,
+                        diagramPath = diagramPath,
+                        topicLabel = analysis.intent.name
+                    )
+                )
+
                 val assistantMsg = ExamChatMessage(
-                    id = ++nextExamChatMsgId,
+                    id = if (savedAssistantId > 0L) savedAssistantId else ++nextExamChatMsgId,
                     role = "assistant",
                     content = finalEvent.fullText,
                     intent = analysis.intent,
@@ -1641,9 +1765,22 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Resolves the latest AI response across Smart Learning, Exam Chat, Main Chat, or verified WBBSE notes.
+     * Resolves the latest AI response across Fast Learning, Brahmastram, Mind Map, Smart Learning,
+     * Exam Chat, Main Chat, or verified WBBSE notes.
      */
     private fun resolveLatestContentBundle(): Triple<String, String, String> {
+        val flMsg = fastLearningChatState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (fastLearningState.value.isOpen && flMsg != null) {
+            val subjLabel = WbbseSubject.fromId(flMsg.subjectId)?.bengaliName ?: "ফাস্ট লার্নিং"
+            return Triple(flMsg.topicLabel.ifBlank { "$subjLabel মাইক্রো-সামারি" }, subjLabel, flMsg.content)
+        }
+
+        val brMsg = brahmastramChatState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (brahmastramState.value.isOpen && brMsg != null) {
+            val subjLabel = WbbseSubject.fromId(brMsg.subjectId)?.bengaliName ?: "ব্রহ্মাস্ত্রম"
+            return Triple(brMsg.topicLabel.ifBlank { "$subjLabel ব্রহ্মাস্ত্রম উত্তর" }, subjLabel, brMsg.content)
+        }
+
         val slMsg = smartLearningState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
         if (smartLearningState.value.isOpen && slMsg != null) {
             val subjLabel = slMsg.subject?.bengaliName ?: "স্মার্ট লার্নিং"
@@ -1688,6 +1825,14 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             rawAnswer = body,
             fallbackTitle = title,
             subjectLabel = subjLabel
+        )
+    }
+
+    fun openMindMapFromText(title: String, subjectLabel: String, body: String) {
+        _mindMapTree.value = MindMapParser.parse(
+            rawAnswer = body,
+            fallbackTitle = title,
+            subjectLabel = subjectLabel
         )
     }
 
@@ -1781,6 +1926,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeAllOverlaysForShortcut() {
+        closeFastLearning()
         smartLearningController.closeSmartLearning()
         topperExtrasController.closeMapBoard()
         topperExtrasController.closeRapidFire()
@@ -1794,6 +1940,97 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         masterUpgradeController.closeWritingStudio()
         masterUpgradeController.closeLanguageLab()
         masterUpgradeController.closeMathSolver()
+    }
+
+    // ==================== Fast Learning Hub & Section Chats ====================
+
+    fun openFastLearning() {
+        _fastLearningLocalNav.update { it.copy(isOpen = true) }
+    }
+
+    fun closeFastLearning() {
+        _fastLearningLocalNav.update { it.copy(isOpen = false) }
+    }
+
+    fun selectFastLearningTab(tabIndex: Int) {
+        _fastLearningLocalNav.update { it.copy(activeTabIndex = tabIndex.coerceIn(0, 1)) }
+    }
+
+    fun selectFastLearningSubject(subject: WbbseSubject?) {
+        _fastLearningLocalNav.update { it.copy(selectedSubject = subject) }
+    }
+
+    fun setFastLearningExamYear(year: Int) {
+        viewModelScope.launch {
+            settingsDataStore.setFastLearningExamYear(year)
+        }
+    }
+
+    fun setFastLearningPlan(plan: SyllabusPlanOption) {
+        viewModelScope.launch {
+            settingsDataStore.setFastLearningPlanMonths(plan.months)
+        }
+    }
+
+    fun toggleFastLearningChapterCompleted(chapterKey: String) {
+        viewModelScope.launch {
+            settingsDataStore.toggleFastLearningChapter(chapterKey)
+        }
+    }
+
+    fun quickReviseChapterInFastLearning(item: FastLearningChapterItem) {
+        val year = fastLearningState.value.targetExamYear
+        _fastLearningLocalNav.update {
+            it.copy(
+                activeTabIndex = 1,
+                selectedSubject = item.subject
+            )
+        }
+        val prompt = "${item.subject.bengaliName} বিষয়ের '${item.chapterName}' অধ্যায়ের মাধ্যমিক $year পরীক্ষার জন্য সুপার-ফাস্ট মাইক্রো-কনসেপ্ট সামারি, মূল সূত্র ও সম্ভাব্য বোর্ড প্রশ্ন দাও।"
+        sectionChatController.sendMessage(
+            section = ChatSection.FAST_LEARNING,
+            rawText = prompt,
+            subject = item.subject,
+            sectionContextHint = "Fast Learning VVI Chapter: ${item.chapterName} (${item.subject.bengaliName}, Est. ${item.estimatedBoardMarks} marks)",
+            fastLearningMicroMode = true
+        )
+    }
+
+    fun sendSectionChatMessage(
+        section: ChatSection,
+        rawText: String,
+        subject: WbbseSubject?,
+        sectionContextHint: String = ""
+    ) {
+        sectionChatController.sendMessage(
+            section = section,
+            rawText = rawText,
+            subject = subject,
+            sectionContextHint = sectionContextHint,
+            fastLearningMicroMode = (section == ChatSection.FAST_LEARNING)
+        )
+    }
+
+    fun attachSectionChatPhoto(section: ChatSection, uri: Uri) {
+        sectionChatController.attachPhotoUri(section, uri)
+    }
+
+    fun clearSectionChatPendingPhoto(section: ChatSection) {
+        sectionChatController.clearPendingPhoto(section)
+    }
+
+    fun clearSectionChat(section: ChatSection) {
+        ttsManager.stop()
+        sectionChatController.clearSectionChat(section)
+    }
+
+    fun dismissSectionChatError(section: ChatSection) {
+        sectionChatController.clearError(section)
+    }
+
+    fun shortcutOpenFastLearning() {
+        closeAllOverlaysForShortcut()
+        openFastLearning()
     }
 
     fun shortcutOpenSmartLearning() {

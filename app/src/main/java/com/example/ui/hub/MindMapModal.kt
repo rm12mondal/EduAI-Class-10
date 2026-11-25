@@ -1,5 +1,6 @@
 package com.example.ui.hub
 
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Chat
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -63,6 +65,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.master.MathUnicodeFormatter
+import com.example.model.InferenceMode
+import com.example.model.SectionChatUiState
+import com.example.ui.chat.SectionChatPanel
 
 data class MindMapBranch(
     val id: Int,
@@ -262,12 +267,26 @@ object MindMapParser {
 @Composable
 fun VisualMindMapModal(
     tree: MindMapTree,
+    chatState: SectionChatUiState,
+    inferenceMode: InferenceMode,
+    speakingMessageId: Long?,
+    voiceInjectedText: String?,
     onExportPdf: () -> Unit,
+    onSendChatMessage: (String) -> Unit,
+    onAttachChatPhoto: (Uri) -> Unit,
+    onClearChatPendingPhoto: () -> Unit,
+    onClearChat: () -> Unit,
+    onToggleSpeak: (Long, String) -> Unit,
+    onDismissChatError: () -> Unit,
+    onConsumeVoiceInjectedText: () -> Unit,
+    onRebuildMindMapFromReply: (String, String, String) -> Unit,
+    onShowToast: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var panOffset by remember { mutableStateOf(Offset.Zero) }
     var selectedBranchId by remember(tree) { mutableStateOf<Int?>(null) }
+    var showChatTab by remember { mutableStateOf(false) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -286,76 +305,152 @@ fun VisualMindMapModal(
                     color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 2.dp
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                modifier = Modifier.size(38.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.AccountTree,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AccountTree,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = "ভিজ্যুয়াল মাইন্ড-ম্যাপ (Flowchart)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${tree.subjectLabel} • ${tree.branches.size}টি মূল শাখা • জুম/ট্যাপ করো",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
-                            Column {
-                                Text(
-                                    text = "ভিজ্যুয়াল মাইন্ড-ম্যাপ (Flowchart)",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "${tree.subjectLabel} • ${tree.branches.size}টি মূল শাখা • জুম/ট্যাপ করো",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (!showChatTab) {
+                                    IconButton(
+                                        onClick = {
+                                            scale = 1f
+                                            panOffset = Offset.Zero
+                                            selectedBranchId = null
+                                        },
+                                        modifier = Modifier
+                                            .minimumInteractiveComponentSize()
+                                            .testTag("mindmap_reset_zoom_btn")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.RestartAlt,
+                                            contentDescription = "Reset zoom"
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .minimumInteractiveComponentSize()
+                                        .testTag("mindmap_close_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Close Mind-Map"
+                                    )
+                                }
                             }
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    scale = 1f
-                                    panOffset = Offset.Zero
-                                    selectedBranchId = null
-                                },
+                        // 2-Tab Switcher: Flowchart View ↔ Dedicated Mind-Map Chat
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                onClick = { showChatTab = false },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (!showChatTab) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant,
                                 modifier = Modifier
+                                    .weight(1f)
                                     .minimumInteractiveComponentSize()
-                                    .testTag("mindmap_reset_zoom_btn")
+                                    .testTag("mindmap_tab_canvas")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.RestartAlt,
-                                    contentDescription = "Reset zoom"
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AccountTree,
+                                        contentDescription = null,
+                                        tint = if (!showChatTab) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "🌳 মাইন্ড-ম্যাপ",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (!showChatTab) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
-                            IconButton(
-                                onClick = onDismiss,
+
+                            Surface(
+                                onClick = { showChatTab = true },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (showChatTab) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant,
                                 modifier = Modifier
+                                    .weight(1f)
                                     .minimumInteractiveComponentSize()
-                                    .testTag("mindmap_close_btn")
+                                    .testTag("mindmap_tab_chat")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "Close Mind-Map"
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Chat,
+                                        contentDescription = null,
+                                        tint = if (showChatTab) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "💬 মাইন্ড-ম্যাপ চ্যাট (${chatState.messages.size})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (showChatTab) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
@@ -363,6 +458,41 @@ fun VisualMindMapModal(
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                if (showChatTab) {
+                    val starterPrompts = remember(tree.rootTitle) {
+                        listOf(
+                            "'${tree.rootTitle}' টপিকটির প্রতিটি শাখা সহজভাবে পয়েন্ট করে বুঝিয়ে দাও।",
+                            "'${tree.rootTitle}' থেকে মাধ্যমিকে আসার মতো ৩টি গুরুত্বপূর্ণ প্রশ্ন ও উত্তর বলো।",
+                            "নতুন টপিক: আলোর প্রতিসরণ ও লেন্স — মাইন্ড-ম্যাপ আকারে সাজিয়ে দাও।"
+                        )
+                    }
+                    SectionChatPanel(
+                        state = chatState,
+                        inferenceMode = inferenceMode,
+                        speakingMessageId = speakingMessageId,
+                        accentColor = MaterialTheme.colorScheme.secondary,
+                        starterPrompts = starterPrompts,
+                        onSendMessage = onSendChatMessage,
+                        onAttachPhotoUri = onAttachChatPhoto,
+                        onClearPendingPhoto = onClearChatPendingPhoto,
+                        onClearChat = onClearChat,
+                        onToggleSpeak = onToggleSpeak,
+                        onShowToast = onShowToast,
+                        onDismissError = onDismissChatError,
+                        voiceInjectedText = voiceInjectedText,
+                        onConsumeVoiceInjectedText = onConsumeVoiceInjectedText,
+                        extraAssistantActionLabel = "মাইন্ড-ম্যাপে দেখো",
+                        onExtraAssistantAction = { msg ->
+                            onRebuildMindMapFromReply(
+                                msg.topicLabel.ifBlank { tree.rootTitle },
+                                tree.subjectLabel,
+                                msg.content
+                            )
+                            showChatTab = false
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
                 // Interactive Zoomable Flowchart Canvas & Node Tree
                 Box(
                     modifier = Modifier
@@ -663,6 +793,7 @@ fun VisualMindMapModal(
                             Text("বন্ধ করো")
                         }
                     }
+                }
                 }
             }
         }

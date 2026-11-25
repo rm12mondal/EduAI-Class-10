@@ -305,6 +305,36 @@ fun SmartLearningScreen(
                             )
                         }
 
+                        if (state.messages.isNotEmpty()) {
+                            Surface(
+                                onClick = onClearSession,
+                                shape = RoundedCornerShape(999.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
+                                modifier = Modifier
+                                    .minimumInteractiveComponentSize()
+                                    .testTag("smart_learning_header_clear_btn")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DeleteOutline,
+                                        contentDescription = "Clear Smart Learning Chat",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "মুছো",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
                         Surface(
                             onClick = onOpenAudioRevision,
                             shape = RoundedCornerShape(999.dp),

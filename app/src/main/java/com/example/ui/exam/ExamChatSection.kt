@@ -134,6 +134,8 @@ fun ExamChatSection(
     onSendExamMessage: (String) -> Unit,
     onToggleSpeakMessage: (Long, String) -> Unit,
     onShowSnackbar: (String) -> Unit,
+    voiceInjectedText: String? = null,
+    onConsumeVoiceInjectedText: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val examChat = uiState.examChat
@@ -145,6 +147,13 @@ fun ExamChatSection(
     var showPhotoSheet by remember { mutableStateOf(false) }
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
     var zoomedDiagramPath by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(voiceInjectedText) {
+        if (!voiceInjectedText.isNullOrBlank()) {
+            inputText = if (inputText.isBlank()) voiceInjectedText else "$inputText $voiceInjectedText"
+            onConsumeVoiceInjectedText()
+        }
+    }
 
     val cameraDeniedMsg = stringResource(R.string.camera_permission_denied)
     val copiedMsg = stringResource(R.string.chat_copied_toast)
@@ -192,7 +201,88 @@ fun ExamChatSection(
         }
     }
 
+    fun launchDirectCamera() {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            val uri = NotebookImageHelper.createTempCameraImageUri(context)
+            tempCameraUri = uri
+            takePictureLauncher.launch(uri)
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    fun launchDirectGallery() {
+        galleryPickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+        )
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
+        // Persistent Compact Mock Exam Chat Header with Clear Chat button
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (uiState.inferenceMode == InferenceMode.ONLINE) {
+                        "মক এক্সাম চ্যাট (অনলাইন) • সেভড: ${examChat.messages.size}"
+                    } else {
+                        "মক এক্সাম চ্যাট (অফলাইন) • সেভড: ${examChat.messages.size}"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (uiState.inferenceMode == InferenceMode.ONLINE) OnlineCobalt else SageOffline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Surface(
+                    onClick = onClearExamChat,
+                    enabled = examChat.messages.isNotEmpty() || examChat.isGenerating,
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(
+                        alpha = if (examChat.messages.isNotEmpty()) 0.85f else 0.45f
+                    ),
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("exam_chat_clear_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteOutline,
+                            contentDescription = "Clear exam chat",
+                            tint = if (examChat.messages.isNotEmpty()) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "চ্যাট মুছো",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (examChat.messages.isNotEmpty()) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        )
+                    }
+                }
+            }
+        }
+
         // Active Normal Test or Madhyamik Exam Hall Countdown Banner
         examChat.activeSession?.let { session ->
             ActiveExamSessionBanner(
@@ -225,45 +315,7 @@ fun ExamChatSection(
                         .fillMaxSize()
                         .testTag("exam_chat_messages_list")
                 ) {
-                    item(key = "exam_chat_header_actions") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (uiState.inferenceMode == InferenceMode.ONLINE) {
-                                    "অনলাইন ৩-ইন-১ পরীক্ষক (Gemini)"
-                                } else {
-                                    "অফলাইন পরীক্ষক (WBBSE ব্যাংক + Llama)"
-                                },
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (uiState.inferenceMode == InferenceMode.ONLINE) OnlineCobalt else SageOffline
-                            )
-                            Surface(
-                                onClick = onClearExamChat,
-                                shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.testTag("exam_chat_clear_button")
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.DeleteOutline,
-                                        contentDescription = "Clear exam chat",
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Text(
-                                        text = "নতুন সেশন",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    // Messages list (header Clear Chat button is pinned above)
 
                     items(examChat.messages, key = { it.id }) { msg ->
                         ExamChatMessageBubble(
@@ -289,7 +341,7 @@ fun ExamChatSection(
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-        // Exam Chat Composer Bar (Smart To-The-Point + Marks + Translate + Photo + Mic + AI Visual)
+        // Exam Chat Composer Bar (Direct Camera + Gallery + Mic + AI Visual + Smart Marks)
         ExamChatComposer(
             inputText = inputText,
             onInputChange = { inputText = it },
@@ -304,7 +356,8 @@ fun ExamChatSection(
             onToggleVisualMode = onToggleVisualMode,
             onToggleTranslateMode = onToggleTranslateMode,
             onSelectTargetMarks = onSelectTargetMarks,
-            onOpenPhotoPicker = { showPhotoSheet = true },
+            onCameraClick = ::launchDirectCamera,
+            onGalleryClick = ::launchDirectGallery,
             onClearPendingPhoto = onClearPendingPhoto,
             onLaunchMic = launchVoiceInput,
             onSend = {
@@ -956,7 +1009,8 @@ private fun ExamChatComposer(
     onToggleVisualMode: () -> Unit,
     onToggleTranslateMode: () -> Unit,
     onSelectTargetMarks: (Int?) -> Unit,
-    onOpenPhotoPicker: () -> Unit,
+    onCameraClick: () -> Unit,
+    onGalleryClick: () -> Unit,
     onClearPendingPhoto: () -> Unit,
     onLaunchMic: () -> Unit,
     onSend: () -> Unit
@@ -1030,32 +1084,51 @@ private fun ExamChatComposer(
                 testTagPrefix = "exam_chat"
             )
 
-            // Action Tool Bar: Camera, Mic, and "AI Visual (ছবি দিয়ে বুঝিয়ে দাও)" right next to them
+            // Action Tool Bar: Direct Camera, Direct Gallery, Mic, and "AI Visual"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Surface(
-                    onClick = onOpenPhotoPicker,
+                    onClick = onCameraClick,
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier
                         .minimumInteractiveComponentSize()
                         .testTag("exam_chat_camera_button")
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.CameraAlt,
-                            contentDescription = "Attach notebook photo",
+                            contentDescription = "Capture notebook photo",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(18.dp)
                         )
-                        Text("খাতা", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                Surface(
+                    onClick = onGalleryClick,
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .testTag("exam_chat_gallery_button")
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PhotoLibrary,
+                            contentDescription = "Choose photo from gallery",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
 
