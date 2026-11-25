@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.RocketLaunch
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Stop
@@ -129,6 +130,7 @@ fun FloatingDActionHub(
     onSetPodcastSpeed: (Float) -> Unit,
     onOpenFullPodcastPlayer: () -> Unit,
     onShortcutFastLearning: () -> Unit,
+    onShortcutStepByStepMemory: () -> Unit,
     onShortcutSmartLearning: () -> Unit,
     onShortcutBrahmastram: () -> Unit,
     onShortcutGrammarLab: () -> Unit,
@@ -292,6 +294,10 @@ fun FloatingDActionHub(
                         onShortcutFastLearning = {
                             isMenuOpen = false
                             onShortcutFastLearning()
+                        },
+                        onShortcutStepByStepMemory = {
+                            isMenuOpen = false
+                            onShortcutStepByStepMemory()
                         },
                         onShortcutSmartLearning = {
                             isMenuOpen = false
@@ -470,6 +476,7 @@ private fun DHubPopupMenuCard(
     onSetPodcastSpeed: (Float) -> Unit,
     onOpenFullPodcastPlayer: () -> Unit,
     onShortcutFastLearning: () -> Unit,
+    onShortcutStepByStepMemory: () -> Unit,
     onShortcutSmartLearning: () -> Unit,
     onShortcutBrahmastram: () -> Unit,
     onShortcutGrammarLab: () -> Unit,
@@ -944,6 +951,15 @@ private fun DHubPopupMenuCard(
                     subtitle = "VVI ওয়েটেজ সিলেবাস, পরীক্ষার বছর, সেলফ-রিপোর্ট ও চ্যাট",
                     tag = "d_hub_shortcut_fast_learning",
                     onClick = onShortcutFastLearning
+                )
+
+                DHubShortcutRow(
+                    icon = Icons.Rounded.Psychology,
+                    tint = Color(0xFF6D28D9),
+                    title = "🧠 ধাপে ধাপে শিখি ও মনে রাখার টেকনিক",
+                    subtitle = "Step-by-Step অঙ্ক (A/B) ও ছড়া-গল্পে মেমোরি ট্রিক",
+                    tag = "d_hub_shortcut_step_by_step_memory",
+                    onClick = onShortcutStepByStepMemory
                 )
 
                 DHubShortcutRow(

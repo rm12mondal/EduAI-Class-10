@@ -60,7 +60,8 @@ class SectionChatController(
     private val transientStates = mapOf(
         ChatSection.BRAHMASTRAM to MutableStateFlow(SectionChatTransientState()),
         ChatSection.MIND_MAP to MutableStateFlow(SectionChatTransientState()),
-        ChatSection.FAST_LEARNING to MutableStateFlow(SectionChatTransientState())
+        ChatSection.FAST_LEARNING to MutableStateFlow(SectionChatTransientState()),
+        ChatSection.STEP_BY_STEP_MEMORY to MutableStateFlow(SectionChatTransientState())
     )
 
     private val activeJobs = mutableMapOf<ChatSection, Job?>()
@@ -68,6 +69,7 @@ class SectionChatController(
     val brahmastramChatState: StateFlow<SectionChatUiState> = buildSectionStateFlow(ChatSection.BRAHMASTRAM)
     val mindMapChatState: StateFlow<SectionChatUiState> = buildSectionStateFlow(ChatSection.MIND_MAP)
     val fastLearningChatState: StateFlow<SectionChatUiState> = buildSectionStateFlow(ChatSection.FAST_LEARNING)
+    val stepByStepMemoryChatState: StateFlow<SectionChatUiState> = buildSectionStateFlow(ChatSection.STEP_BY_STEP_MEMORY)
 
     private fun buildSectionStateFlow(section: ChatSection): StateFlow<SectionChatUiState> {
         val transientFlow = transientStates.getValue(section)
@@ -132,7 +134,9 @@ class SectionChatController(
         rawText: String,
         subject: WbbseSubject?,
         sectionContextHint: String = "",
-        fastLearningMicroMode: Boolean = (section == ChatSection.FAST_LEARNING)
+        fastLearningMicroMode: Boolean = (section == ChatSection.FAST_LEARNING),
+        stepByStepInteractiveMode: Boolean = (section == ChatSection.STEP_BY_STEP_MEMORY),
+        memoryTrickMode: Boolean = false
     ) {
         val transientFlow = transientStates[section] ?: return
         val current = transientFlow.value
@@ -148,6 +152,12 @@ class SectionChatController(
                     "এই ছবির প্রশ্ন/নোটটি ব্রহ্মাস্ত্রম শিওর-শট বোর্ড মান অনুযায়ী সমাধান ও মূল্যায়ন করো।"
                 ChatSection.MIND_MAP ->
                     "এই ছবির মূল পয়েন্টগুলো মাইন্ড-ম্যাপের শাখা আকারে সহজভাবে সাজিয়ে বুঝিয়ে দাও।"
+                ChatSection.STEP_BY_STEP_MEMORY ->
+                    if (memoryTrickMode) {
+                        "এই ছবির সূত্র, তারিখ, সংজ্ঞা বা নিয়মগুলো সহজে মনে রাখার জন্য ছড়া, মজার গল্প ও শর্টকাট মেমোরি ট্রিক বানিয়ে দাও।"
+                    } else {
+                        "এই ছবির সমস্যাটি পুরো উত্তর একসাথে না দিয়ে শুধুমাত্র ধাপ ১ (Step 1) সহজভাবে বোঝাও এবং ধাপ ২ আনলক করার জন্য আমাকে একটি A বা B প্রশ্ন করো।"
+                    }
                 else ->
                     "এই ছবিটি WBBSE ক্লাস ১০ অনুযায়ী সহজভাবে বুঝিয়ে দাও।"
             }
@@ -157,17 +167,6 @@ class SectionChatController(
         val llamaConfig = getLlamaConfig()
         val targetExamYear = getTargetExamYear()
         val planLabel = getSyllabusPlanLabel()
-        val options = ChatPromptOptions(
-            smartToThePoint = section == ChatSection.BRAHMASTRAM,
-            visualDiagramRequested = false,
-            translateMode = false,
-            targetMarks = null,
-            exactTextbookDefinition = getExactTextbookMode(),
-            targetExamYear = targetExamYear,
-            syllabusPlanLabel = planLabel,
-            fastLearningMicroMode = fastLearningMicroMode,
-            sectionContextHint = sectionContextHint
-        )
 
         activeJobs[section]?.cancel()
         activeJobs[section] = scope.launch {
@@ -182,6 +181,11 @@ class SectionChatController(
                             ChatSection.FAST_LEARNING -> "🚀 ফাস্ট লার্নিং ($targetExamYear) মাইক্রো-সামারি তৈরি হচ্ছে…"
                             ChatSection.BRAHMASTRAM -> "🔥 ব্রহ্মাস্ত্রম AI ডাউট সলভার লিখছে…"
                             ChatSection.MIND_MAP -> "🌳 মাইন্ড-ম্যাপ AI বিশ্লেষক লিখছে…"
+                            ChatSection.STEP_BY_STEP_MEMORY -> if (memoryTrickMode) {
+                                "💡 ছড়া ও মনে রাখার টেকনিক তৈরি হচ্ছে…"
+                            } else {
+                                "🧠 ধাপে ধাপে ব্যাখ্যা (Step-by-Step) তৈরি হচ্ছে…"
+                            }
                             else -> "EduAI উত্তর লিখছে…"
                         },
                         mode = activeMode,
@@ -191,6 +195,32 @@ class SectionChatController(
             }
 
             try {
+                val recentHistoryContext = if (section == ChatSection.STEP_BY_STEP_MEMORY) {
+                    studyRepository.getSectionMessagesSnapshot(ChatSection.STEP_BY_STEP_MEMORY)
+                        .takeLast(6)
+                        .joinToString("\n") { msg ->
+                            val speaker = if (msg.role == "user") "Student" else "Tutor"
+                            "$speaker: ${msg.content.take(420)}"
+                        }
+                } else {
+                    ""
+                }
+
+                val options = ChatPromptOptions(
+                    smartToThePoint = section == ChatSection.BRAHMASTRAM,
+                    visualDiagramRequested = false,
+                    translateMode = false,
+                    targetMarks = null,
+                    exactTextbookDefinition = getExactTextbookMode(),
+                    targetExamYear = targetExamYear,
+                    syllabusPlanLabel = planLabel,
+                    fastLearningMicroMode = fastLearningMicroMode,
+                    sectionContextHint = sectionContextHint,
+                    stepByStepInteractiveMode = stepByStepInteractiveMode,
+                    memoryTrickMode = memoryTrickMode,
+                    recentConversationContext = recentHistoryContext
+                )
+
                 val savedImagePath = pendingPhoto?.let {
                     NotebookImageHelper.persistThumbnail(appContext, it.previewBitmap)
                 }

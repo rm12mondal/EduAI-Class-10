@@ -12,7 +12,10 @@ data class ChatPromptOptions(
     val targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
     val syllabusPlanLabel: String = SyllabusPlanOption.MONTHS_3.labelEn,
     val fastLearningMicroMode: Boolean = false,
-    val sectionContextHint: String = ""
+    val sectionContextHint: String = "",
+    val stepByStepInteractiveMode: Boolean = false,
+    val memoryTrickMode: Boolean = false,
+    val recentConversationContext: String = ""
 )
 
 /**

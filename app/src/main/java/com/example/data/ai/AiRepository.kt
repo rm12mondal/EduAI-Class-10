@@ -205,7 +205,10 @@ class HybridEduAiRepository(
                         targetMarks = analysis.detectedMarks,
                         exactTextbookDefinition = analysis.exactTextbookDefinition,
                         targetExamYear = analysis.targetExamYear,
-                        fastLearningMicroMode = analysis.fastLearningMicroMode
+                        fastLearningMicroMode = analysis.fastLearningMicroMode,
+                        stepByStepInteractiveMode = analysis.stepByStepInteractiveMode,
+                        memoryTrickMode = analysis.memoryTrickMode,
+                        recentConversationContext = analysis.recentConversationContext
                     )
                 }
 
@@ -219,7 +222,11 @@ class HybridEduAiRepository(
 
             InferenceMode.ONLINE -> {
                 val sourceLabel = when {
+                    imageBitmap != null && analysis.memoryTrickMode -> "💡 ছবি থেকে মনে রাখার টেকনিক • Gemini"
+                    imageBitmap != null && analysis.stepByStepInteractiveMode -> "🧠 ছবি থেকে ধাপে ধাপে টিউটর • Gemini"
                     imageBitmap != null -> "অনলাইন খাতা মূল্যায়ন • Gemini ($ONLINE_MODEL_NAME)"
+                    analysis.memoryTrickMode -> "💡 সহজে মনে রাখার টেকনিক • Gemini"
+                    analysis.stepByStepInteractiveMode -> "🧠 ধাপে ধাপে টিউটর (Step-by-Step) • Gemini"
                     analysis.fastLearningMicroMode -> "🚀 ফাস্ট লার্নিং (${analysis.targetExamYear}) • Gemini"
                     analysis.exactTextbookDefinition -> "📖 পাঠ্যবইয়ের হুবহু সংজ্ঞা • WBBSE Gemini"
                     analysis.effectiveTranslate -> "অনলাইন অনুবাদ (বাংলা ↔ English) • Gemini"
@@ -236,7 +243,10 @@ class HybridEduAiRepository(
                         targetMarks = analysis.detectedMarks,
                         targetExamYear = analysis.targetExamYear,
                         syllabusPlanLabel = analysis.syllabusPlanLabel,
-                        fastLearningMicroMode = analysis.fastLearningMicroMode
+                        fastLearningMicroMode = analysis.fastLearningMicroMode,
+                        stepByStepInteractiveMode = analysis.stepByStepInteractiveMode,
+                        memoryTrickMode = analysis.memoryTrickMode,
+                        recentConversationContext = analysis.recentConversationContext
                     )
                     content {
                         image(imageBitmap)
@@ -627,7 +637,10 @@ class HybridEduAiRepository(
         targetMarks: Int?,
         targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
         syllabusPlanLabel: String = "3 Months",
-        fastLearningMicroMode: Boolean = false
+        fastLearningMicroMode: Boolean = false,
+        stepByStepInteractiveMode: Boolean = false,
+        memoryTrickMode: Boolean = false,
+        recentConversationContext: String = ""
     ): String = buildString {
         val subjectHint = subject?.let { "${it.bengaliName} (${it.englishName})" }
             ?: "WBBSE Class 10 (Madhyamik)"
@@ -640,8 +653,24 @@ class HybridEduAiRepository(
                 fastMicroMode = fastLearningMicroMode
             )
         )
+        if (recentConversationContext.isNotBlank()) {
+            append("\n[RECENT STEP-BY-STEP CONVERSATION HISTORY]\n$recentConversationContext\n")
+        }
         append("Student instruction: ${userPrompt.ifBlank { "Evaluate my handwritten answer for WBBSE Class 10." }}\n\n")
-        if (fastLearningMicroMode) {
+        if (memoryTrickMode) {
+            append("[MEMORY TRICK PHOTO MODE — RHYMES, STORIES & MNEMONICS]\n")
+            append("- Read the formula, dates, definitions, equations, or grammar rules shown in this image.\n")
+            append("- Create catchy Bengali/English rhymes (ছড়া), a tiny memorable story (মজার গল্প), a crisp acronym/mnemonic (শর্টকাট সূত্র), and a 1-line instant recall trick so the student remembers it effortlessly for WBBSE Madhyamik.\n")
+            append("- Use clean Unicode math/chemistry symbols (², ³, ₂, ₄, ×, ÷, √, π, θ, Δ) — NEVER raw LaTeX.\n")
+        } else if (stepByStepInteractiveMode) {
+            append("[INTERACTIVE STEP-BY-STEP PHOTO TUTOR — STRICT ONE-STEP-AT-A-TIME RULE]\n")
+            append("- Read the Math/Physics numerical, derivation, or concept problem in the photo.\n")
+            append("- CRITICAL: DO NOT reveal the complete solution or final answer all at once!\n")
+            append("- Explain ONLY **ধাপ ১ (Step 1)** clearly in simple Bengali (identify given values / formula / first move) using clean Unicode math symbols (², ³, ₂, ₄, ×, ÷, √, π, θ, Δ).\n")
+            append("- STOP immediately after Step 1 and ask ONE quick interactive check-question with two choices:\n")
+            append("  ❓ **ধাপ ২ আনলক করতে উত্তর দাও:**\n  (A) ...\n  (B) ...\n")
+            append("- Tell the student to reply A or B to unlock Step 2!\n")
+        } else if (fastLearningMicroMode) {
             append("FAST LEARNING PHOTO MODE: Read the image (book page, notes, or problem) and turn it into a super-crisp micro-concept summary focused on Madhyamik $targetExamYear board scoring.\n")
         } else if (smartCondense) {
             append("SMART TO-THE-POINT MODE IS ACTIVE: If the image is a textbook/long note or question, extract and deliver a ZERO-FLUFF, 100% full-marks WBBSE Madhyamik board answer with bold keywords and exact bullet points. ${buildSmartMarksRule(targetMarks)}\n")
@@ -675,6 +704,9 @@ class HybridEduAiRepository(
         if (analysis.sectionContextHint.isNotBlank()) {
             append("\n[ACTIVE SECTION CONTEXT]\n${analysis.sectionContextHint}\n")
         }
+        if (analysis.recentConversationContext.isNotBlank()) {
+            append("\n[RECENT STEP-BY-STEP CONVERSATION HISTORY]\n${analysis.recentConversationContext}\n")
+        }
         if (topMatches.isNotEmpty()) {
             append("\nRelevant WBBSE Class 10 syllabus reference:\n")
             topMatches.forEach { note ->
@@ -686,6 +718,29 @@ class HybridEduAiRepository(
             append("\nTRANSLATION MODE (Bengali ↔ English): Provide an accurate, natural WBBSE Class 10 academic translation between Bengali and English, plus 2–3 key vocabulary terms.\n")
         }
 
+        if (analysis.memoryTrickMode) {
+            append("\n[💡 MEMORY TRICK & MNEMONIC MASTER MODE — RHYMES, STORIES & SHORTCUTS]\n")
+            append("- Your goal is to make formulas, historical dates, scientific definitions, biological terms, geography lists, or Bengali/English grammar rules UNFORGETTABLE for a WBBSE Class 10 student.\n")
+            append("- Structure your answer cleanly in Bengali (keeping English terms/grammar rules clear where relevant) with:\n")
+            append("  1. 🎵 **ছড়া / রাইম ট্রিক (Rhyme Trick):** A short, catchy 2–4 line rhyme to lock the exact facts/formula in memory.\n")
+            append("  2. 📖 **মজার গল্প বা ছবি-কল্পনা (Mini-Story / Visual Hook):** A crisp 2-line relatable story connecting the concepts.\n")
+            append("  3. 🔑 **শর্টকাট সূত্র / অ্যাক্রোনিম (Mnemonic / Acronym):** An ultra-fast exam-hall memory code.\n")
+            append("  4. ⚡ **পরীক্ষার হলে ১-সেকেন্ড রিকল:** The exact clean formula/date/rule using Unicode math/chem symbols (², ³, ₂, ₄, ×, ÷, √, π, θ, Δ).\n")
+            append("- Keep it joyful, vivid, 100% accurate to WBBSE syllabus, and easy to read aloud.\n")
+        } else if (analysis.stepByStepInteractiveMode) {
+            append("\n[🧠 INTERACTIVE STEP-BY-STEP TUTOR MODE — STRICT ONE-STEP UNLOCK RULE]\n")
+            append("- For Mathematics, Physical Science numericals, equations, derivations, geometry proofs, or multi-step questions:\n")
+            append("  • NEVER show the full solution or final answer all at once on the first message!\n")
+            append("  • If this is a NEW question/problem: explain ONLY **ধাপ ১ (Step 1)** very clearly in easy Bengali (e.g., প্রদত্ত তথ্য ও প্রথম সূত্র), STOP there, and ask ONE quick interactive check-question to unlock Step 2:\n")
+            append("    ❓ **ধাপ ২ আনলক করতে বলো:**\n    (A) <option A>\n    (B) <option B>\n")
+            append("  • If the [RECENT STEP-BY-STEP CONVERSATION HISTORY] shows you just asked a check-question and the student replied (e.g., 'A', 'B', 'উত্তর: A', 'পরবর্তী ধাপ', or an explanation):\n")
+            append("    1. First warmly praise if right (✅ একদম ঠিক!) or gently explain why the other option is right (💡 দারুণ চেষ্টা! সঠিক উত্তরটি হবে...).\n")
+            append("    2. Then unlock ONLY the **next step (ধাপ ২ / ধাপ ৩ / ...)** clearly.\n")
+            append("    3. If more steps remain, end with a fresh (A)/(B) check-question to unlock the next step. If this is the final step, show 🎉 **চূড়ান্ত উত্তর (Final Answer)** + a 1-line **🏆 মাধ্যমিক বোর্ড টিপস**.\n")
+            append("- For non-numerical theory/grammar questions: still teach interactively chunk-by-chunk (Chunk 1 + quick A/B check to unlock the next chunk).\n")
+            append("- Always use clean Unicode symbols (², ³, ₂, ₄, ×, ÷, √, π, θ, Δ) — NEVER raw LaTeX.\n")
+        }
+
         if (analysis.exactTextbookDefinition) {
             append("\n[EXACT WBBSE TEXTBOOK DEFINITION MODE — STRICT WORD-FOR-WORD]\n")
             append("- Deliver ONLY the strict, authoritative WBBSE Class 10 (Parshad) textbook definition word-for-word.\n")
@@ -694,7 +749,7 @@ class HybridEduAiRepository(
             append("- Do NOT include casual stories, greetings, or conversational filler.\n")
         }
 
-        if (analysis.effectiveSmartAnswer && !analysis.fastLearningMicroMode) {
+        if (analysis.effectiveSmartAnswer && !analysis.fastLearningMicroMode && !analysis.stepByStepInteractiveMode && !analysis.memoryTrickMode) {
             append("\n[SMART EXAM-READY TO-THE-POINT MODE ACTIVE — ZERO FLUFF]\n")
             append("- Eliminate ALL greetings, filler, long introductions, and irrelevant stories.\n")
             append("- Output ONLY the exact, high-scoring WBBSE Madhyamik board answer structured with numbered/bullet points, **bolded keywords**, exact formulas/dates/diagrams where required.\n")
@@ -885,7 +940,10 @@ class HybridEduAiRepository(
         targetMarks: Int? = null,
         exactTextbookDefinition: Boolean = false,
         targetExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
-        fastLearningMicroMode: Boolean = false
+        fastLearningMicroMode: Boolean = false,
+        stepByStepInteractiveMode: Boolean = false,
+        memoryTrickMode: Boolean = false,
+        recentConversationContext: String = ""
     ): Pair<String, String> {
         val ggufState = ggufModelManager.state.value
         val activeMeta = ggufState.activeMetadata
@@ -896,7 +954,7 @@ class HybridEduAiRepository(
         }
 
         val llamaPrompt = LlamaNativeBridge.buildLlama32Prompt(query, subject, ragContext)
-        val nativeReply = if (isGgufReady && (activeMeta?.fileSizeBytes ?: 0L) >= 1_000_000L) {
+        val nativeReply = if (isGgufReady && (activeMeta?.fileSizeBytes ?: 0L) >= 1_000_000L && !stepByStepInteractiveMode && !memoryTrickMode) {
             LlamaNativeBridge.generateNativeIfLoaded(llamaPrompt, config)
         } else {
             null
@@ -906,12 +964,31 @@ class HybridEduAiRepository(
         }
 
         val sourceBadge = when {
+            memoryTrickMode -> "💡 মনে রাখার টেকনিক • অফলাইন মেমোরি হাব"
+            stepByStepInteractiveMode -> "🧠 ধাপে ধাপে টিউটর (অফলাইন স্টেপ আনলক)"
             fastLearningMicroMode -> "🚀 ফাস্ট লার্নিং ($targetExamYear) • অফলাইন মাইক্রো-সামারি"
             exactTextbookDefinition -> "📖 পাঠ্যবইয়ের হুবহু সংজ্ঞা • WBBSE অফলাইন"
             smartToThePoint && isGgufReady -> "🎯 অফলাইন টু-দ্য-পয়েন্ট • GGUF (${activeMeta?.quantizationHint})"
             smartToThePoint -> "🎯 অফলাইন টু-দ্য-পয়েন্ট WBBSE উত্তর"
             isGgufReady -> "অফলাইন WBBSE ডেটা • GGUF (${activeMeta?.quantizationHint})"
             else -> "অফলাইন WBBSE মাস্টার ডেটা"
+        }
+
+        if (memoryTrickMode) {
+            val primary = topMatches.firstOrNull()
+            val resolvedSubj = subject ?: primary?.let { WbbseSubject.fromId(it.subjectId) } ?: WbbseSubject.MATHEMATICS
+            return buildOfflineMemoryTrickReply(resolvedSubj, query, primary) to sourceBadge
+        }
+
+        if (stepByStepInteractiveMode) {
+            val primary = topMatches.firstOrNull()
+            val resolvedSubj = subject ?: primary?.let { WbbseSubject.fromId(it.subjectId) } ?: WbbseSubject.MATHEMATICS
+            return buildOfflineStepByStepReply(
+                subject = resolvedSubj,
+                query = query,
+                primary = primary,
+                recentConversationContext = recentConversationContext
+            ) to sourceBadge
         }
 
         val response = if (topMatches.isNotEmpty()) {
@@ -984,6 +1061,146 @@ class HybridEduAiRepository(
         }
 
         return response to sourceBadge
+    }
+
+    private fun buildOfflineMemoryTrickReply(
+        subject: WbbseSubject,
+        query: String,
+        primary: MasterDataEntity?
+    ): String = buildString {
+        append("💡 **সহজে মনে রাখার টেকনিক (${subject.bengaliName})**\n\n")
+        if (primary != null) {
+            append("📘 অধ্যায়: ${primary.chapterName} — **${primary.topicTitle}**\n\n")
+        }
+        when (subject) {
+            WbbseSubject.MATHEMATICS -> {
+                append("🎵 **ছড়া ট্রিক (ত্রিকোণমিতি ও পরিমিতি):**\n")
+                append("• “**সা**গরে **ল**বণ **অ**তি, **ক**বরে **ভূ**ত **অ**তি, **ট্যা**ন **ল**ম্বা **ভূ**ত!” → sin = লম্ব/অতিভুজ, cos = ভূমি/অতিভুজ, tan = লম্ব/ভূমি।\n")
+                append("• “চোঙের তিন ভাগের এক ভাগ শঙ্কু, আর গোলকে চার-তৃতীয়াংশ πr³ বন্ধু!”\n\n")
+                append("🔑 **শর্টকাট সূত্র:**\n")
+                append(primary?.keyFormulaOrFact ?: "শ্রীধর আচার্য: x = (-b ± √(b² - 4ac)) / 2a | চক্রবৃদ্ধি সুদ: A = P(1 + r/100)^n")
+            }
+
+            WbbseSubject.PHYSICAL_SCIENCE -> {
+                append("🎵 **ছড়া ট্রিক (গ্যাস ও তড়িৎ):**\n")
+                append("• “**বয়েল** বাবু **তাপ** থামিয়ে চাপ বাড়ালেন — আয়তন কমল! (PV = ধ্রুবক)”\n")
+                append("• “**চার্লস** সাহেব **চাপ** থামিয়ে তাপ বাড়ালেন — আয়তন বাড়ল! (V ∝ T)”\n")
+                append("• “**ভি-আই-আর (V = IR)** মনে রাখো ‘বীর’ বলে — ওহমের সূত্র কখনো ভুলবে না!”\n\n")
+                append("🔑 **শর্টকাট সূত্র ও একক:**\n")
+                append(primary?.keyFormulaOrFact ?: "PV = nRT | V = IR | H = I²Rt/J | sin i / sin r = μ")
+            }
+
+            WbbseSubject.LIFE_SCIENCE -> {
+                append("🎵 **ছড়া ট্রিক (মাইটোসিস ও হরমোন):**\n")
+                append("• মাইটোসিসের ৪টি দশা মনে রাখো **“প্রো-মে-অ্যা-টে (PMAT)”** দিয়ে: **প্রো**ফেজ → **মে**টাফেজ (মাঝে/Middle) → **অ্যা**নাফেজ (আলাদা/Apart) → **টে**লোফেজ (দুই প্রান্তে/Two)!\n")
+                append("• উদ্ভিদ হরমোন **“অ-জি-সা”**: **অ**ক্সিন (অগ্রস্থ প্রকটতা), **জি**ব্বেরেলিন (পর্বমধ্য বৃদ্ধি), **সা**ইটোকাইনিন (কোষ বিভাজন)।\n\n")
+                append("🔑 **মনে রাখার কীওয়ার্ড:**\n")
+                append(primary?.keyFormulaOrFact ?: "PMAT দশা, অক্সিন-জিব্বেরেলিন-সাইটোকাইনিন, মেন্ডেলের ৩:১ ও ৯:৩:৩:১ অনুপাত")
+            }
+
+            WbbseSubject.HISTORY -> {
+                append("🎵 **ছড়া ও সাল মনে রাখার গল্প (আধুনিক ভারত):**\n")
+                append("• “**১৮৫৫**-তে সাঁওতাল জাগে, **১৮৫৭**-তে মহাবিদ্রোহ, **১৮৫৯**-এ নীলচাষীরা গড়ল নতুন দিশা!”\n")
+                append("• “**১৯০৫**-এ বঙ্গভঙ্গ, **১৯২০**-তে অসহযোগ, **১৯৩০**-এ ডান্ডি মার্চ, **১৯৪২**-এ ভারত ছাড়ো!”\n\n")
+                append("🔑 **সাল-নাম শর্টকাট:**\n")
+                append(primary?.keyFormulaOrFact ?: "১৮১৭ হিন্দু কলেজ | ১৮২৮ ব্রাহ্মসভা | ১৮৫৭ কলকাতা বিশ্ববিদ্যালয় | ১৮৭২ তিন আইন")
+            }
+
+            WbbseSubject.GEOGRAPHY -> {
+                append("🎵 **ছড়া ও অ্যাক্রোনিম ট্রিক (নদী, বায়ুমণ্ডল ও ভারত):**\n")
+                append("• বায়ুমণ্ডলের স্তর নিচ থেকে উপরে: **“ট্র-স্ট্র্যা-মে-থা-এ”** (ট্রপোস্ফিয়ার → স্ট্র্যাটোস্ফিয়ার → মেসোস্ফিয়ার → থার্মোস্ফিয়ার → এক্সোস্ফিয়ার)।\n")
+                append("• হিমবাহের ক্ষয়জাত ভূমিরূপ মনে রাখো **“ক-অ্যা-পি-ইউ”**: **ক**রি, **অ্যা**রেট, **পি**রামিড চূড়া, **ইউ**-আকৃতির উপত্যকা!\n\n")
+                append("🔑 **পরীক্ষার শর্টকাট ফ্যাক্ট:**\n")
+                append(primary?.keyFormulaOrFact ?: "প্রতি ১০০০ মি. উচ্চতায় তাপমাত্রা ৬.৪°C কমে (স্বাভাবিক উষ্ণতা হ্রাসের হার)")
+            }
+
+            WbbseSubject.BENGALI -> {
+                append("🎵 **ছড়া ট্রিক (কারক ও সমাস চেনার জাদু):**\n")
+                append("• ক্রিয়াকে **‘কে’** করলে কর্তৃ, **‘কী/কাকে’** কর্ম, **‘কিসের দ্বারা’** করণ, **‘কোথা হতে’** অপাদান, **‘কখন/কোথায়’** অধিকরণ!\n")
+                append("• সমাস শর্টকাট: **দ্বন্দ্ব** = এবং/ও, **দ্বিগু** = সংখ্যা, **বহুব্রীহি** = তৃতীয় অর্থ (যেমন: দশানন = রাবণ)।\n\n")
+                append("🔑 **মনে রাখার মূল পয়েন্ট:**\n")
+                append(primary?.keyFormulaOrFact ?: "কারক ৬ প্রকার, সমাস মূলত ৬ প্রকার, বাচ্য ৪ প্রকার (কর্তৃ, কর্ম, ভাব, কর্মকর্তৃ)")
+            }
+
+            WbbseSubject.ENGLISH -> {
+                append("🎵 **Rhyme & Shortcut Trick (Tense, Voice & Narration):**\n")
+                append("• **Voice Change Golden Rule:** “Object সামনে আসে, Be-verb বসে পাশে, Main Verb সবসময় **V3** সাজে, By + Subject শেষে বাজে!”\n")
+                append("• **FANBOYS** (Compound Conjunctions): **F**or, **A**nd, **N**or, **B**ut, **O**r, **Y**et, **S**o.\n\n")
+                append("🔑 **Quick Exam Recall:**\n")
+                append(primary?.keyFormulaOrFact ?: "Simple Present → am/is/are + V3 | Simple Past → was/were + V3 | Modal → modal + be + V3")
+            }
+        }
+        append("\n\n⚡ **তোমার প্রশ্নের ফোকাস:** $query")
+        append("\n\n🌐 যেকোনো নির্দিষ্ট সূত্র, তারিখ বা ছবির ওপর কাস্টম নতুন ছড়া ও গল্প বানাতে উপরের সুইচ দিয়ে **অনলাইন (Online)** মোড চালু করতে পারো!")
+    }
+
+    private fun buildOfflineStepByStepReply(
+        subject: WbbseSubject,
+        query: String,
+        primary: MasterDataEntity?,
+        recentConversationContext: String
+    ): String {
+        val qLower = query.lowercase().trim()
+        val isStepUnlockReply = qLower == "a" || qLower == "b" ||
+            qLower.startsWith("উত্তর: a") || qLower.startsWith("উত্তর: b") ||
+            qLower.startsWith("option a") || qLower.startsWith("option b") ||
+            qLower.contains("পরবর্তী ধাপ") || qLower.contains("next step") ||
+            qLower.contains("ধাপ ২") || qLower.contains("ধাপ ৩")
+
+        val hasStep1InHistory = recentConversationContext.contains("ধাপ ১")
+        val hasStep2InHistory = recentConversationContext.contains("ধাপ ২")
+
+        return buildString {
+            if (isStepUnlockReply && hasStep2InHistory) {
+                append("✅ **দারুণ করেছ! এবার চূড়ান্ত ধাপ (ধাপ ৩ — Final Answer) আনলক হলো:**\n\n")
+                if (primary != null) {
+                    append("🎉 **মূল সিদ্ধান্ত / চূড়ান্ত উত্তর (${primary.topicTitle}):**\n")
+                    append("${primary.content}\n\n")
+                    append("📌 **অবশ্যই মনে রাখার সূত্র/তথ্য:** ${primary.keyFormulaOrFact}\n")
+                    append("🏆 **মাধ্যমিক বোর্ড টিপস:** ${primary.examTip}")
+                } else {
+                    append("🎉 **চূড়ান্ত ধাপ সম্পন্ন!** মানগুলো বসিয়ে এককসহ (SI/CGS) উত্তর লিখলেই পূর্ণ নম্বর নিশ্চিত।\n")
+                    append("🏆 **মাধ্যমিক বোর্ড টিপস:** প্রতিটি ধাপের পাশে ব্যবহৃত সূত্র ও সঠিক একক লিখতে ভুলো না!")
+                }
+                append("\n\n👉 এবার নতুন কোনো অঙ্ক বা প্রশ্ন লেখো, অথবা **‘💡 সহজে মনে রাখার টেকনিক’** বাটনে ট্যাপ করো!")
+            } else if (isStepUnlockReply && hasStep1InHistory) {
+                val praised = if (qLower.contains("a")) {
+                    "✅ **একদম ঠিক উত্তর (Option A)!** দারুণ ধরেছ।"
+                } else {
+                    "💡 **ভালো চেষ্টা!** সঠিক পথটি হলো **Option A** — কারণ প্রথমে মূল সূত্রটি বসিয়ে মান প্রতিস্থাপন করতে হয়।"
+                }
+                append("$praised\n\n")
+                append("🔓 **ধাপ ২ (Step 2 — সূত্র প্রয়োগ ও হিসাব):**\n")
+                if (primary != null) {
+                    append("• এই ধাপে আমরা **${primary.topicTitle}**-এর মূল সূত্রটি বসাব:\n")
+                    append("  👉 `${primary.keyFormulaOrFact}`\n")
+                    append("• প্রতিটি রাশির মান একক মিলিয়ে বসিয়ে সরলীকরণ করো।\n\n")
+                } else {
+                    append("• প্রদত্ত রাশিগুলোর মান মূল সূত্রে বসিয়ে বামপক্ষ ও ডানপক্ষ সরলীকরণ করো।\n")
+                    append("• অঙ্কে চিহ্ন (+ / -) এবং বর্গমূল বা একক রূপান্তর সাবধানে যাচাই করো।\n\n")
+                }
+                append("❓ **ধাপ ৩ (চূড়ান্ত উত্তর) আনলক করতে বলো:**\n")
+                append("(A) মান বসিয়ে সরলীকরণের পর সঠিক এককসহ চূড়ান্ত উত্তর লিখব\n")
+                append("(B) একক ছাড়াই শুধু সংখ্যা লিখে রেখে দেব\n\n")
+                append("👇 নিচের **‘উত্তর: A’** বা **‘উত্তর: B’** বাটনে ট্যাপ করে চূড়ান্ত ধাপ আনলক করো!")
+            } else {
+                append("🧠 **ধাপে ধাপে শিখি — ${subject.bengaliName}**\n")
+                append("*(পুরো উত্তর একসাথে নয় — এক ধাপ করে নিজে বুঝে আনলক করো!)*\n\n")
+                append("🔓 **ধাপ ১ (Step 1 — প্রশ্ন বিশ্লেষণ ও প্রথম পদক্ষেপ):**\n")
+                if (primary != null) {
+                    append("• অধ্যায়: **${primary.chapterName}** (${primary.topicTitle})\n")
+                    append("• প্রথমে প্রশ্নে কী কী তথ্য দেওয়া আছে এবং কী বের করতে হবে তা আলাদা করে লিখে নাও।\n")
+                    append("• এই ধরনের সমস্যার মূল ভিত্তি হলো: **${primary.topicTitle}**।\n\n")
+                } else {
+                    append("• প্রথমে প্রশ্নে প্রদত্ত রাশি/তথ্যগুলো (Given data) তালিকা করে লেখো।\n")
+                    append("• নিশ্চিত করো সব মান একই এককে (SI বা CGS) আছে কি না।\n\n")
+                }
+                append("❓ **ধাপ ২ আনলক করতে বলো:**\n")
+                append("(A) এখন আমরা এই টপিকের মূল সূত্রটি বেছে নিয়ে মান বসাব\n")
+                append("(B) কোনো সূত্র ছাড়াই সরাসরি আন্দাজে উত্তর লিখে দেব\n\n")
+                append("👇 নিচের **‘উত্তর: A’** বা **‘উত্তর: B’** ট্যাপ করো — সাথে সাথে ধাপ ২ খুলে যাবে! (নির্দিষ্ট যেকোনো অঙ্কের আসল সংখ্যা ধরে ধাপে ধাপে সমাধান করতে উপরের **অনলাইন** সুইচ চালু করতে পারো।)")
+            }
+        }
     }
 
     private fun rankRelevantNotes(

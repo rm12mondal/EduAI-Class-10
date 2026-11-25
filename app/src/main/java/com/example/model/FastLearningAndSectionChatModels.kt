@@ -59,6 +59,12 @@ enum class ChatSection(
         titleBn = "ফাস্ট লার্নিং চ্যাট",
         subtitleBn = "আসন্ন বোর্ড প্যাটার্ন • মাইক্রো-কনসেপ্ট সামারি",
         placeholderBn = "যেকোনো VVI অধ্যায়ের ফাস্ট মাইক্রো-সামারি চাও…"
+    ),
+    STEP_BY_STEP_MEMORY(
+        id = "step_by_step_memory",
+        titleBn = "ধাপে ধাপে শিখি ও মনে রাখার টেকনিক",
+        subtitleBn = "স্টেপ-বাই-স্টেপ টিউটর ও ছড়া-গল্পে মেমোরি ট্রিক",
+        placeholderBn = "অঙ্ক, সংজ্ঞা, তারিখ বা ব্যাকরণের প্রশ্ন লেখো…"
     );
 
     companion object {
@@ -132,6 +138,12 @@ data class SectionChatUiState(
     val streamingDraft: StreamingDraft? = null,
     val pendingPhoto: PendingPhotoAttachment? = null,
     val errorMessage: String? = null
+)
+
+data class StepByStepMemoryUiState(
+    val isOpen: Boolean = false,
+    val selectedSubject: WbbseSubject = WbbseSubject.MATHEMATICS,
+    val memoryTrickMode: Boolean = false
 )
 
 /**

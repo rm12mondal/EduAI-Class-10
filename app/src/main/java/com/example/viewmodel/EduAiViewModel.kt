@@ -75,6 +75,7 @@ import com.example.model.SavedPdfLibraryUiState
 import com.example.model.ScorePredictorSummary
 import com.example.model.SectionChatUiState
 import com.example.model.SpacedRevisionUiState
+import com.example.model.StepByStepMemoryUiState
 import com.example.model.SyllabusPlanOption
 import com.example.model.TopperSectionType
 import com.example.model.TopperSubjectTrack
@@ -234,11 +235,15 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    private val _stepByStepMemoryState = MutableStateFlow(StepByStepMemoryUiState())
+    val stepByStepMemoryState: StateFlow<StepByStepMemoryUiState> = _stepByStepMemoryState
+
     private val speechRecognizer = EduSpeechRecognizer(
         context = application,
         onFinalTranscript = { spoken ->
             _voiceInjectedText.value = spoken
-            val inActiveChatContext = fastLearningState.value.isOpen ||
+            val inActiveChatContext = stepByStepMemoryState.value.isOpen ||
+                fastLearningState.value.isOpen ||
                 brahmastramState.value.isOpen ||
                 mindMapTree.value != null ||
                 smartLearningState.value.isOpen ||
@@ -272,6 +277,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     val brahmastramChatState: StateFlow<SectionChatUiState> = sectionChatController.brahmastramChatState
     val mindMapChatState: StateFlow<SectionChatUiState> = sectionChatController.mindMapChatState
     val fastLearningChatState: StateFlow<SectionChatUiState> = sectionChatController.fastLearningChatState
+    val stepByStepMemoryChatState: StateFlow<SectionChatUiState> = sectionChatController.stepByStepMemoryChatState
 
     private val topperController = TopperController(
         appContext = appContext,
@@ -1769,6 +1775,13 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
      * Exam Chat, Main Chat, or verified WBBSE notes.
      */
     private fun resolveLatestContentBundle(): Triple<String, String, String> {
+        val sbsMsg = stepByStepMemoryChatState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (stepByStepMemoryState.value.isOpen && sbsMsg != null) {
+            val subjLabel = WbbseSubject.fromId(sbsMsg.subjectId)?.bengaliName
+                ?: stepByStepMemoryState.value.selectedSubject.bengaliName
+            return Triple(sbsMsg.topicLabel.ifBlank { "$subjLabel ধাপে ধাপে ও মেমোরি ট্রিক" }, subjLabel, sbsMsg.content)
+        }
+
         val flMsg = fastLearningChatState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
         if (fastLearningState.value.isOpen && flMsg != null) {
             val subjLabel = WbbseSubject.fromId(flMsg.subjectId)?.bengaliName ?: "ফাস্ট লার্নিং"
@@ -1926,6 +1939,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeAllOverlaysForShortcut() {
+        closeStepByStepMemory()
         closeFastLearning()
         smartLearningController.closeSmartLearning()
         topperExtrasController.closeMapBoard()
@@ -2031,6 +2045,66 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     fun shortcutOpenFastLearning() {
         closeAllOverlaysForShortcut()
         openFastLearning()
+    }
+
+    // ==================== Step-by-Step Tutor & Memory Tricks Hub ====================
+
+    fun openStepByStepMemory(subject: WbbseSubject? = null) {
+        _stepByStepMemoryState.update { current ->
+            current.copy(
+                isOpen = true,
+                selectedSubject = subject ?: current.selectedSubject
+            )
+        }
+    }
+
+    fun closeStepByStepMemory() {
+        _stepByStepMemoryState.update { it.copy(isOpen = false) }
+    }
+
+    fun selectStepByStepSubject(subject: WbbseSubject) {
+        _stepByStepMemoryState.update { it.copy(selectedSubject = subject) }
+    }
+
+    fun toggleStepByStepMemoryTrickMode() {
+        _stepByStepMemoryState.update { it.copy(memoryTrickMode = !it.memoryTrickMode) }
+    }
+
+    fun sendStepByStepMessage(rawText: String, forceMemoryTrick: Boolean = false) {
+        val sbs = _stepByStepMemoryState.value
+        val useMemoryTrick = forceMemoryTrick || sbs.memoryTrickMode
+        sectionChatController.sendMessage(
+            section = ChatSection.STEP_BY_STEP_MEMORY,
+            rawText = rawText,
+            subject = sbs.selectedSubject,
+            sectionContextHint = if (useMemoryTrick) {
+                "Memory Trick Mode (${sbs.selectedSubject.bengaliName}) — Create rhymes, stories, mnemonics, and easy memory shortcuts."
+            } else {
+                "Interactive Step-by-Step Tutor (${sbs.selectedSubject.bengaliName}) — Teach Step 1 first with an A/B check question, unlock next steps only after student replies."
+            },
+            fastLearningMicroMode = false,
+            stepByStepInteractiveMode = !useMemoryTrick,
+            memoryTrickMode = useMemoryTrick
+        )
+    }
+
+    fun triggerQuickMemoryTrick() {
+        val sbs = _stepByStepMemoryState.value
+        val latestTopic = stepByStepMemoryChatState.value.messages
+            .lastOrNull { it.role == "user" && it.content.length > 8 }
+            ?.content
+            ?.take(80)
+        val prompt = if (latestTopic != null && !latestTopic.startsWith("উত্তর:")) {
+            "‘$latestTopic’ এবং ${sbs.selectedSubject.bengaliName} বিষয়ের মূল সূত্র/তারিখ/সংজ্ঞা/নিয়মগুলো সহজে মনে রাখার জন্য মজার ছড়া, ছোট গল্প ও শর্টকাট মেমোরি ট্রিক (Mnemonics) বানিয়ে দাও।"
+        } else {
+            "${sbs.selectedSubject.bengaliName} (${sbs.selectedSubject.englishName}) বিষয়ের সবচেয়ে গুরুত্বপূর্ণ সূত্র, তারিখ, সংজ্ঞা বা ব্যাকরণের নিয়মগুলো সহজে মনে রাখার জন্য মজার ছড়া, ছোট গল্প ও শর্টকাট মেমোরি ট্রিক (Mnemonics) বানিয়ে দাও।"
+        }
+        sendStepByStepMessage(rawText = prompt, forceMemoryTrick = true)
+    }
+
+    fun shortcutOpenStepByStepMemory() {
+        closeAllOverlaysForShortcut()
+        openStepByStepMemory(subject = uiState.value.selectedChatSubject ?: _stepByStepMemoryState.value.selectedSubject)
     }
 
     fun shortcutOpenSmartLearning() {

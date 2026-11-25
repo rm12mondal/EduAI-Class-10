@@ -58,6 +58,7 @@ import com.example.ui.hub.FloatingDActionHub
 import com.example.ui.hub.VisualMindMapModal
 import com.example.ui.learning.FastLearningScreen
 import com.example.ui.learning.SmartLearningScreen
+import com.example.ui.learning.StepByStepMemoryScreen
 import com.example.ui.master.AiVivaOralScreen
 import com.example.ui.master.BrahmastramScreen
 import com.example.ui.master.ConfusionCleanerScreen
@@ -153,10 +154,13 @@ fun EduAiApp(
     val brahmastramChatState by viewModel.brahmastramChatState.collectAsStateWithLifecycle()
     val mindMapChatState by viewModel.mindMapChatState.collectAsStateWithLifecycle()
     val fastLearningChatState by viewModel.fastLearningChatState.collectAsStateWithLifecycle()
+    val stepByStepMemoryState by viewModel.stepByStepMemoryState.collectAsStateWithLifecycle()
+    val stepByStepMemoryChatState by viewModel.stepByStepMemoryChatState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val hasFullScreenOverlay = fastLearningState.isOpen ||
+    val hasFullScreenOverlay = stepByStepMemoryState.isOpen ||
+        fastLearningState.isOpen ||
         smartLearningState.isOpen ||
         mapBoardState.isOpen ||
         rapidFireState.isOpen ||
@@ -292,6 +296,41 @@ fun EduAiApp(
                         onDelete = viewModel::deleteSavedPdf,
                         onBack = viewModel::closeSavedPdfLibrary,
                         onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                stepByStepMemoryState.isOpen -> {
+                    StepByStepMemoryScreen(
+                        state = stepByStepMemoryState,
+                        chatState = stepByStepMemoryChatState,
+                        inferenceMode = uiState.inferenceMode,
+                        speakingMessageId = uiState.ttsState.speakingMessageId,
+                        voiceInjectedText = voiceInjectedText,
+                        onToggleInferenceMode = viewModel::toggleInferenceMode,
+                        onSelectSubject = viewModel::selectStepByStepSubject,
+                        onToggleMemoryTrickMode = viewModel::toggleStepByStepMemoryTrickMode,
+                        onTriggerQuickMemoryTrick = viewModel::triggerQuickMemoryTrick,
+                        onSendChatMessage = { msg -> viewModel.sendStepByStepMessage(msg) },
+                        onSendMemoryTrickMessage = { msg ->
+                            viewModel.sendStepByStepMessage(msg, forceMemoryTrick = true)
+                        },
+                        onAttachChatPhoto = { uri ->
+                            viewModel.attachSectionChatPhoto(ChatSection.STEP_BY_STEP_MEMORY, uri)
+                        },
+                        onClearPendingPhoto = {
+                            viewModel.clearSectionChatPendingPhoto(ChatSection.STEP_BY_STEP_MEMORY)
+                        },
+                        onClearChat = { viewModel.clearSectionChat(ChatSection.STEP_BY_STEP_MEMORY) },
+                        onToggleSpeak = viewModel::toggleSpeakMessage,
+                        onDismissChatError = {
+                            viewModel.dismissSectionChatError(ChatSection.STEP_BY_STEP_MEMORY)
+                        },
+                        onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
+                        onShowSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        onClose = viewModel::closeStepByStepMemory,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
@@ -610,7 +649,8 @@ fun EduAiApp(
                 smartLearningState.messages.any { it.role != "user" } ||
                 uiState.examChat.messages.any { it.role != "user" } ||
                 fastLearningChatState.messages.any { it.role != "user" } ||
-                brahmastramChatState.messages.any { it.role != "user" },
+                brahmastramChatState.messages.any { it.role != "user" } ||
+                stepByStepMemoryChatState.messages.any { it.role != "user" },
             onSelectVoiceLanguage = viewModel::setVoiceInputLanguage,
             onToggleVoiceListening = viewModel::toggleVoiceListening,
             onToggleExactTextbookMode = viewModel::toggleExactTextbookMode,
@@ -620,6 +660,7 @@ fun EduAiApp(
             onSetPodcastSpeed = viewModel::setQuickPodcastSpeed,
             onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
             onShortcutFastLearning = viewModel::shortcutOpenFastLearning,
+            onShortcutStepByStepMemory = viewModel::shortcutOpenStepByStepMemory,
             onShortcutSmartLearning = viewModel::shortcutOpenSmartLearning,
             onShortcutBrahmastram = viewModel::shortcutOpenBrahmastram,
             onShortcutGrammarLab = viewModel::shortcutOpenGrammarLab,
