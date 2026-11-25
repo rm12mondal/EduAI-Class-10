@@ -44,22 +44,33 @@ class BrahmastramService(
         val subjectNotes = allMasterNotes.filter { it.subjectId == subject.id }
             .sortedBy { if (it.importanceLevel == TopicImportance.VVI) 0 else 1 }
 
+        val offlineNotes = buildOfflineBrahmastramNotes(subject, completedIds)
+
         if (inferenceMode == InferenceMode.ONLINE) {
             try {
-                val aiNotes = generateOnlineBrahmastramNotes(subject, subjectNotes.take(10), completedIds)
-                if (aiNotes.size >= 4) {
-                    return aiNotes to "🌐 অনলাইন Gemini 3.8 Flash • ব্রহ্মাস্ত্রম শিওর-শট সাজেশন"
+                val aiNotes = generateOnlineBrahmastramNotes(subject, subjectNotes.take(14), completedIds)
+                if (aiNotes.size >= 8) {
+                    val existingTitles = aiNotes.map { it.title.trim().lowercase() }.toMutableSet()
+                    val combined = aiNotes.toMutableList()
+                    for (curated in offlineNotes) {
+                        if (combined.size >= 20) break
+                        val key = curated.title.trim().lowercase()
+                        if (existingTitles.add(key)) {
+                            val newId = "br_${subject.id}_${combined.size + 1}"
+                            combined.add(curated.copy(id = newId, isCompleted = newId in completedIds))
+                        }
+                    }
+                    return combined to "🌐 অনলাইন Gemini + ২০টি ব্রহ্মাস্ত্রম শিওর-শট সাজেশন"
                 }
             } catch (_: Exception) {
                 // Smooth fallback to verified offline WBBSE syllabus bank
             }
         }
 
-        val offlineNotes = buildOfflineBrahmastramNotes(subject, subjectNotes, completedIds)
         val badge = if (ggufModelManager.state.value.status == GgufModelStatus.READY_LOADED) {
-            "⚡ অফলাইন Llama .gguf + যাচাইকৃত ১০৩-অধ্যায় WBBSE ব্রহ্মাস্ত্রম"
+            "⚡ অফলাইন Llama .gguf + ২০টি যাচাইকৃত WBBSE ব্রহ্মাস্ত্রম"
         } else {
-            "⚡ ১০০% অফলাইন যাচাইকৃত WBBSE ব্রহ্মাস্ত্রম নোটস"
+            "⚡ ১০০% অফলাইন ২০টি যাচাইকৃত WBBSE ব্রহ্মাস্ত্রম নোটস"
         }
         return offlineNotes to badge
     }
@@ -102,13 +113,13 @@ class BrahmastramService(
 
         val prompt = """
             ${StrictWbbsePrecisionEngine.STRICT_FACT_LOCK_PROMPT_RULE}
-            Generate 6 high-probability WBBSE Class 10 Madhyamik "ব্রহ্মাস্ত্রম (Brahmastram)" Sure-Shot Study Notes for:
+            Generate 10 high-probability WBBSE Class 10 Madhyamik "ব্রহ্মাস্ত্রম (Brahmastram)" Sure-Shot Study Notes for:
             Subject: ${subject.bengaliName} (${subject.englishName})
             
             Ground every single note strictly in these verified WBBSE syllabus chapters:
             $groundTruthChapters
             
-            For each of the 6 notes, also generate 1 exact 4-option MCQ question strictly testing that note (with 4 options and correctOptionIndex 0..3). Include at least 2 questions with negative board trap words like 'নয়' or 'ব্যতীত'.
+            For each of the 10 notes, include a clear board tip ("💡 বোর্ড টিপ:") inside sureShotNoteBn, key formulas/facts in keyFormulaOrFact, and generate 1 exact 4-option MCQ question strictly testing that note (with 4 options and correctOptionIndex 0..3). Include at least 2 questions with negative board trap words like 'নয়' or 'ব্যতীত'.
         """.trimIndent()
 
         val rawJson = withTimeout(45_000L) { model.generateContent(prompt).text.orEmpty() }
@@ -120,15 +131,17 @@ class BrahmastramService(
             val chapter = o.optString("chapter").ifBlank { subject.bengaliName }
             val title = o.optString("title").ifBlank { continue }
             val marks = o.optInt("marksWeight", 3).coerceIn(2, 5)
-            val noteBody = o.optString("sureShotNoteBn").ifBlank { continue }
-            val keyFact = o.optString("keyFormulaOrFact")
-            val qPrompt = o.optString("examQuestionPrompt").ifBlank { "$title সম্পর্কে মূল বোর্ড তথ্য কোনটি?" }
+            val noteBody = MathUnicodeFormatter.format(o.optString("sureShotNoteBn")).ifBlank { continue }
+            val keyFact = MathUnicodeFormatter.format(o.optString("keyFormulaOrFact"))
+            val qPrompt = MathUnicodeFormatter.format(
+                o.optString("examQuestionPrompt").ifBlank { "$title সম্পর্কে মূল বোর্ড তথ্য কোনটি?" }
+            )
             val optsArr = o.optJSONArray("mcqOptions")
             val opts = mutableListOf<String>()
             if (optsArr != null) {
                 for (j in 0 until optsArr.length()) {
                     val s = optsArr.optString(j)
-                    if (s.isNotBlank()) opts.add(s)
+                    if (s.isNotBlank()) opts.add(MathUnicodeFormatter.format(s))
                 }
             }
             val correctIdx = o.optInt("correctOptionIndex", 0).coerceIn(0, (opts.size - 1).coerceAtLeast(0))
@@ -155,45 +168,9 @@ class BrahmastramService(
 
     private fun buildOfflineBrahmastramNotes(
         subject: WbbseSubject,
-        subjectNotes: List<MasterDataEntity>,
         completedIds: Set<String>
     ): List<BrahmastramStudyNote> {
-        val topNotes = subjectNotes.take(6)
-        val subjectMcqs = WbbseExamBank.getMcqs(subject)
-        val allChapters = subjectNotes.map { it.chapterName }.distinct()
-
-        return topNotes.mapIndexed { idx, note ->
-            val id = "br_${subject.id}_${idx + 1}"
-            val marks = if (idx % 2 == 0) 5 else 3
-            val pyq = StrictWbbsePrecisionEngine.getPyqTrend(
-                subject.id, note.chapterName, note.topicTitle, note.importanceLevel
-            )
-            val linkedMcq = subjectMcqs.getOrNull(idx)
-            val (qText, opts, correctIdx) = if (linkedMcq != null) {
-                Triple(linkedMcq.question, linkedMcq.options, linkedMcq.correctIndex)
-            } else {
-                val distractors = allChapters.filter { it != note.chapterName }.shuffled().take(3)
-                val finalOpts = (distractors + note.chapterName).shuffled()
-                val ansIdx = finalOpts.indexOf(note.chapterName).coerceAtLeast(0)
-                val prompt = "নিম্নলিখিত শিওর-শট নোট “${note.topicTitle}” কোন অধ্যায়ের অন্তর্গত (অন্য অধ্যায় নয়)?"
-                Triple(prompt, if (finalOpts.size == 4) finalOpts else emptyList(), ansIdx)
-            }
-
-            BrahmastramStudyNote(
-                id = id,
-                chapter = note.chapterName,
-                title = note.topicTitle,
-                marksWeight = marks,
-                pyqBadge = "${pyq.yearsBadge} • ${pyq.probabilityBadge}",
-                sureShotNoteBn = "${note.content}\n\n💡 বোর্ড টিপ: ${note.examTip}",
-                topperWritingStructureBn = StrictWbbsePrecisionEngine.formatTopperAnswerSheet(note.content, subject, marks),
-                keyFormulaOrFact = note.keyFormulaOrFact,
-                examQuestionPrompt = qText,
-                mcqOptions = opts,
-                correctOptionIndex = correctIdx,
-                isCompleted = id in completedIds
-            )
-        }
+        return BrahmastramOfflineBank.getCuratedNotes(subject, completedIds)
     }
 
     /**

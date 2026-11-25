@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Biotech
 import androidx.compose.material.icons.rounded.Bolt
@@ -35,10 +34,10 @@ import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Spellcheck
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +72,9 @@ import com.example.model.WritingLanguage
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
+import com.example.ui.theme.highContrastAccent
+import com.example.ui.theme.isDarkSurfaceTheme
+import com.example.ui.theme.splitFormulaLines
 
 @Composable
 fun SubjectsScreen(
@@ -133,7 +135,6 @@ fun SubjectsScreen(
             onExportPdf = onExportPdf,
             onToggleBookmark = onToggleBookmark,
             onDeleteCustomNote = onDeleteCustomNote,
-            onOpenAddDialog = { showAddNoteDialog = true },
             modifier = modifier
         )
 
@@ -377,6 +378,9 @@ private fun SubjectOverviewCard(
     onClick: () -> Unit,
     onSmartLearningClick: () -> Unit
 ) {
+    val isDark = isDarkSurfaceTheme()
+    val readableAccent = highContrastAccent(subject.accentColor)
+
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(20.dp),
@@ -402,13 +406,13 @@ private fun SubjectOverviewCard(
                     modifier = Modifier
                         .size(54.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(subject.accentColor.copy(alpha = 0.14f)),
+                        .background(subject.accentColor.copy(alpha = if (isDark) 0.34f else 0.14f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = subject.icon,
                         contentDescription = subject.englishName,
-                        tint = subject.accentColor,
+                        tint = if (isDark) Color.White else subject.accentColor,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -427,13 +431,14 @@ private fun SubjectOverviewCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Surface(
-                            color = subject.accentColor.copy(alpha = 0.12f),
+                            color = subject.accentColor.copy(alpha = if (isDark) 0.34f else 0.12f),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
                                 text = subject.shortCode,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = subject.accentColor,
+                                color = if (isDark) Color.White else subject.accentColor,
+                                fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
@@ -454,17 +459,17 @@ private fun SubjectOverviewCard(
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = subject.accentColor
+                        color = readableAccent
                     )
                 }
             }
 
             // Direct Smart Learning entry inside EVERY WBBSE Subject Card
-            FilledTonalButton(
+            Button(
                 onClick = onSmartLearningClick,
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = subject.accentColor.copy(alpha = 0.12f),
-                    contentColor = subject.accentColor
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = subject.accentColor,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -479,6 +484,7 @@ private fun SubjectOverviewCard(
                     text = "${subject.bengaliName} — স্মার্ট লার্নিং (সহজ বাংলায় পড়া বোঝো)",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -511,9 +517,10 @@ private fun SubjectDetailView(
     onExportPdf: (String, String, String, String) -> Unit,
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onDeleteCustomNote: (Long) -> Unit,
-    onOpenAddDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isDarkSurfaceTheme()
+    val readableAccent = highContrastAccent(subject.accentColor)
     var vviOnly by remember(subject.id) { mutableStateOf(false) }
 
     val searchFilteredNotes = remember(allSubjectNotes, searchQuery) {
@@ -614,7 +621,7 @@ private fun SubjectDetailView(
                         Text(
                             text = "মোট ${totalDistinctChapters}টি অধ্যায় • ${allSubjectNotes.size}টি সিলেবাস টপিক",
                             style = MaterialTheme.typography.bodySmall,
-                            color = subject.accentColor,
+                            color = if (isDark) Color(0xFFEAF2FF) else subject.accentColor,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -631,7 +638,7 @@ private fun SubjectDetailView(
                     start = 16.dp,
                     end = 16.dp,
                     top = 12.dp,
-                    bottom = 88.dp
+                    bottom = 28.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -640,8 +647,10 @@ private fun SubjectDetailView(
                     Card(
                         onClick = onOpenSmartLearningForSubject,
                         shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = subject.accentColor.copy(alpha = 0.12f)),
-                        border = BorderStroke(1.2.dp, subject.accentColor.copy(alpha = 0.45f)),
+                        colors = CardDefaults.cardColors(
+                            containerColor = subject.accentColor.copy(alpha = if (isDark) 0.28f else 0.12f)
+                        ),
+                        border = BorderStroke(1.2.dp, readableAccent.copy(alpha = 0.55f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("subject_detail_smart_learning_btn")
@@ -664,13 +673,13 @@ private fun SubjectDetailView(
                                 Text(
                                     text = "${subject.bengaliName} — স্মার্ট লার্নিং AI টিউটর",
                                     style = MaterialTheme.typography.titleSmall,
-                                    color = subject.accentColor,
+                                    color = if (isDark) Color.White else subject.accentColor,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
                                     text = "যেকোনো অধ্যায় সহজ বাংলায় গল্পের মতো বোঝো, বইয়ের ছবি দাও বা ২ডি ডায়াগ্রাম তৈরি করো।",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -683,11 +692,14 @@ private fun SubjectDetailView(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        val rapidFireColor = highContrastAccent(TerracottaAccent)
+                        val audioRevColor = highContrastAccent(Color(0xFF0E7490))
+
                         FilledTonalButton(
                             onClick = onOpenRapidFire,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = TerracottaAccent.copy(alpha = 0.14f),
-                                contentColor = TerracottaAccent
+                                containerColor = TerracottaAccent.copy(alpha = if (isDark) 0.24f else 0.14f),
+                                contentColor = rapidFireColor
                             ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
@@ -710,8 +722,8 @@ private fun SubjectDetailView(
                         FilledTonalButton(
                             onClick = onOpenAudioRevisionForSubject,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = Color(0xFF0E7490).copy(alpha = 0.14f),
-                                contentColor = Color(0xFF0E7490)
+                                containerColor = Color(0xFF0E7490).copy(alpha = if (isDark) 0.24f else 0.14f),
+                                contentColor = audioRevColor
                             ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
@@ -739,11 +751,15 @@ private fun SubjectDetailView(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        val vivaColor = highContrastAccent(OnlineCobalt)
+                        val confusionColor = highContrastAccent(Color(0xFF6A1B9A))
+                        val pocketColor = highContrastAccent(SageOffline)
+
                         FilledTonalButton(
                             onClick = onOpenAiViva,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = OnlineCobalt.copy(alpha = 0.13f),
-                                contentColor = OnlineCobalt
+                                containerColor = OnlineCobalt.copy(alpha = if (isDark) 0.24f else 0.13f),
+                                contentColor = vivaColor
                             ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
@@ -766,8 +782,8 @@ private fun SubjectDetailView(
                         FilledTonalButton(
                             onClick = onOpenConfusionCleaner,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = Color(0xFF6A1B9A).copy(alpha = 0.12f),
-                                contentColor = Color(0xFF6A1B9A)
+                                containerColor = Color(0xFF6A1B9A).copy(alpha = if (isDark) 0.24f else 0.12f),
+                                contentColor = confusionColor
                             ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
@@ -790,8 +806,8 @@ private fun SubjectDetailView(
                         FilledTonalButton(
                             onClick = onOpenPocketBook,
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = SageOffline.copy(alpha = 0.14f),
-                                contentColor = SageOffline
+                                containerColor = SageOffline.copy(alpha = if (isDark) 0.24f else 0.14f),
+                                contentColor = pocketColor
                             ),
                             shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
@@ -819,8 +835,10 @@ private fun SubjectDetailView(
                         Card(
                             onClick = onOpenDiagramLab,
                             shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1565C0).copy(alpha = 0.12f)),
-                            border = BorderStroke(1.2.dp, Color(0xFF1565C0).copy(alpha = 0.45f)),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF1565C0).copy(alpha = if (isDark) 0.24f else 0.12f)
+                            ),
+                            border = BorderStroke(1.2.dp, Color(0xFF1565C0).copy(alpha = 0.55f)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("subject_diagram_lab_btn_${subject.id}")
@@ -843,7 +861,7 @@ private fun SubjectDetailView(
                                     Text(
                                         text = "ছবি চিহ্নিতকরণ ল্যাব (Interactive Diagram Lab)",
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = Color(0xFF0D47A1),
+                                        color = if (isDark) Color(0xFFBBDEFB) else Color(0xFF0D47A1),
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
@@ -853,7 +871,7 @@ private fun SubjectDetailView(
                                             "প্রিজমে আলোর বিচ্ছুরণ ও উত্তল লেন্সের রশ্মিচিত্র লেবেলিং প্র্যাকটিস।"
                                         },
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -867,8 +885,10 @@ private fun SubjectDetailView(
                         Card(
                             onClick = { onOpenMathSolver(MathSolverModule.SPHERE) },
                             shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE65100).copy(alpha = 0.12f)),
-                            border = BorderStroke(1.2.dp, Color(0xFFE65100).copy(alpha = 0.45f)),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFFE65100).copy(alpha = if (isDark) 0.24f else 0.12f)
+                            ),
+                            border = BorderStroke(1.2.dp, Color(0xFFE65100).copy(alpha = 0.55f)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("subject_math_solver_btn")
@@ -891,13 +911,13 @@ private fun SubjectDetailView(
                                     Text(
                                         text = "স্মার্ট ম্যাথ ও পরিমিতি সলভার (১০০% অফলাইন)",
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = Color(0xFFBF360C),
+                                        color = if (isDark) Color(0xFFFFCC80) else Color(0xFFBF360C),
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = "সরল/চক্রবৃদ্ধি সুদ, শ্রীধর আচার্য, গোলক, চোঙ ও শঙ্কুর ৩ডি চিত্রসহ ধাপে ধাপে সমাধান + PDF।",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -912,8 +932,10 @@ private fun SubjectDetailView(
                             Card(
                                 onClick = { onOpenLanguageLab(LanguageLabMode.BENGALI_GRAMMAR_LAB) },
                                 shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFAD1457).copy(alpha = 0.11f)),
-                                border = BorderStroke(1.2.dp, Color(0xFFAD1457).copy(alpha = 0.45f)),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFFAD1457).copy(alpha = if (isDark) 0.24f else 0.11f)
+                                ),
+                                border = BorderStroke(1.2.dp, Color(0xFFAD1457).copy(alpha = 0.55f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("subject_bengali_grammar_lab_btn")
@@ -936,13 +958,13 @@ private fun SubjectDetailView(
                                         Text(
                                             text = "বাংলা ব্যাকরণ গুরু (Grammar Lab — ১৬ নম্বর)",
                                             style = MaterialTheme.typography.titleSmall,
-                                            color = Color(0xFF880E4F),
+                                            color = if (isDark) Color(0xFFF8BBD0) else Color(0xFF880E4F),
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             text = "কারক-বিভক্তি, সমাস, বাক্য ও বাচ্য পরিবর্তন — উদাহরণ ও ইন্টারেক্টিভ বিশ্লেষক।",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -951,8 +973,10 @@ private fun SubjectDetailView(
                             Card(
                                 onClick = { onOpenWritingStudio(WritingLanguage.BENGALI) },
                                 shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF6A1B9A).copy(alpha = 0.11f)),
-                                border = BorderStroke(1.2.dp, Color(0xFF6A1B9A).copy(alpha = 0.45f)),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF6A1B9A).copy(alpha = if (isDark) 0.24f else 0.11f)
+                                ),
+                                border = BorderStroke(1.2.dp, Color(0xFF6A1B9A).copy(alpha = 0.55f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("subject_bengali_writing_studio_btn")
@@ -975,13 +999,13 @@ private fun SubjectDetailView(
                                         Text(
                                             text = "রাইটিং ও রচনা স্টুডিও (প্রবন্ধ, সংলাপ, প্রতিবেদন, বঙ্গানুবাদ)",
                                             style = MaterialTheme.typography.titleSmall,
-                                            color = Color(0xFF4A148C),
+                                            color = if (isDark) Color(0xFFE1BEE7) else Color(0xFF4A148C),
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             text = "মাধ্যমিক ফরম্যাট অনুযায়ী সম্পূর্ণ বাংলা নির্মিতি তৈরি ও PDF সেভ করো।",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -997,8 +1021,10 @@ private fun SubjectDetailView(
                             Card(
                                 onClick = { onOpenLanguageLab(LanguageLabMode.ENGLISH_LAB) },
                                 shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0277BD).copy(alpha = 0.11f)),
-                                border = BorderStroke(1.2.dp, Color(0xFF0277BD).copy(alpha = 0.45f)),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF0277BD).copy(alpha = if (isDark) 0.24f else 0.11f)
+                                ),
+                                border = BorderStroke(1.2.dp, Color(0xFF0277BD).copy(alpha = 0.55f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("subject_english_grammar_lab_btn")
@@ -1021,13 +1047,13 @@ private fun SubjectDetailView(
                                         Text(
                                             text = "ইংলিশ সিন, আনসিন ও গ্রামার ল্যাব (৬০ নম্বর)",
                                             style = MaterialTheme.typography.titleSmall,
-                                            color = Color(0xFF01579B),
+                                            color = if (isDark) Color(0xFFB3E5FC) else Color(0xFF01579B),
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             text = "Seen/Unseen Passage Solver, Phrasal Verbs, Voice, Narration ও Do as Directed।",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -1036,8 +1062,10 @@ private fun SubjectDetailView(
                             Card(
                                 onClick = { onOpenWritingStudio(WritingLanguage.ENGLISH) },
                                 shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2E7D32).copy(alpha = 0.11f)),
-                                border = BorderStroke(1.2.dp, Color(0xFF2E7D32).copy(alpha = 0.45f)),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF2E7D32).copy(alpha = if (isDark) 0.24f else 0.11f)
+                                ),
+                                border = BorderStroke(1.2.dp, Color(0xFF2E7D32).copy(alpha = 0.55f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("subject_english_writing_studio_btn")
@@ -1060,13 +1088,13 @@ private fun SubjectDetailView(
                                         Text(
                                             text = "English Writing Studio (Notice, Report, Letter, Process)",
                                             style = MaterialTheme.typography.titleSmall,
-                                            color = Color(0xFF1B5E20),
+                                            color = if (isDark) Color(0xFFC8E6C9) else Color(0xFF1B5E20),
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             text = "WBBSE Box Notice, Editorial Letter, Report, Biography ও Story — ১ ক্লিকে PDF!",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -1086,8 +1114,10 @@ private fun SubjectDetailView(
                         Card(
                             onClick = { onOpenMapBoard(mapDomain) },
                             shape = RoundedCornerShape(18.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF00796B).copy(alpha = 0.13f)),
-                            border = BorderStroke(1.2.dp, Color(0xFF00796B).copy(alpha = 0.45f)),
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF00796B).copy(alpha = if (isDark) 0.24f else 0.13f)
+                            ),
+                            border = BorderStroke(1.2.dp, Color(0xFF00796B).copy(alpha = 0.55f)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .testTag("subject_map_board_btn_${subject.id}")
@@ -1114,13 +1144,13 @@ private fun SubjectDetailView(
                                             "ভূগোল ম্যাপ পয়েন্টিং বোর্ড (১০ নম্বর নিশ্চিত)"
                                         },
                                         style = MaterialTheme.typography.titleSmall,
-                                        color = Color(0xFF00695C),
+                                        color = if (isDark) Color(0xFFB2DFDB) else Color(0xFF00695C),
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = "জুম-যোগ্য ভারতের মানচিত্রে ট্যাপ করে প্র্যাকটিস করো, সঠিক অবস্থান ও বোর্ড প্রতীক (▲ 〰 ▓ ★) শেখো।",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isDark) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -1207,7 +1237,9 @@ private fun SubjectDetailView(
                                         if (note.keyFormulaOrFact.isNotBlank()) {
                                             appendLine()
                                             appendLine("মূল সূত্র / তথ্য:")
-                                            appendLine(note.keyFormulaOrFact)
+                                            splitFormulaLines(note.keyFormulaOrFact).forEach { line ->
+                                                appendLine("• $line")
+                                            }
                                         }
                                         if (note.examTip.isNotBlank()) {
                                             appendLine()
@@ -1224,17 +1256,5 @@ private fun SubjectDetailView(
                 }
             }
         }
-
-        ExtendedFloatingActionButton(
-            onClick = onOpenAddDialog,
-            containerColor = subject.accentColor,
-            contentColor = Color.White,
-            icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-            text = { Text(stringResource(R.string.subjects_add_note)) },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-                .testTag("add_custom_note_fab")
-        )
     }
 }

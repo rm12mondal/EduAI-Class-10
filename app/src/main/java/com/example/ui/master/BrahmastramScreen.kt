@@ -72,6 +72,8 @@ import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
+import com.example.ui.theme.isDarkSurfaceTheme
+import com.example.ui.theme.splitFormulaLines
 import java.util.Locale
 
 /**
@@ -252,6 +254,7 @@ private fun BrahmastramNotesStep(
     onStartTimedExam: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isDarkSurfaceTheme()
     val completedCount = state.notes.count { it.isCompleted }
     val progress = if (state.notes.isEmpty()) 0f else completedCount.toFloat() / state.notes.size.toFloat()
 
@@ -267,10 +270,11 @@ private fun BrahmastramNotesStep(
                     FilterChip(
                         selected = selected,
                         onClick = { onSelectSubject(subj) },
-                        label = { Text(subj.bengaliName) },
+                        label = { Text(subj.bengaliName, fontWeight = FontWeight.SemiBold) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = subj.accentColor,
-                            selectedLabelColor = Color.White
+                            selectedLabelColor = Color.White,
+                            labelColor = MaterialTheme.colorScheme.onSurface
                         ),
                         modifier = Modifier.testTag("brahmastram_subject_${subj.id}")
                     )
@@ -297,15 +301,20 @@ private fun BrahmastramNotesStep(
                         Text(
                             text = "পড়া সম্পন্ন: $completedCount / ${state.notes.size}টি শিওর-শট নোট",
                             style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold
                         )
                         IconButton(onClick = onRegenerateNotes) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Brahmastram")
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                contentDescription = "Refresh Brahmastram",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     }
                     LinearProgressIndicator(
                         progress = { progress },
-                        color = Color(0xFF880E4F),
+                        color = if (isDark) Color(0xFFFF80AB) else Color(0xFF880E4F),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
@@ -318,21 +327,34 @@ private fun BrahmastramNotesStep(
                         Button(
                             onClick = onStartTimedExam,
                             enabled = state.notes.isNotEmpty() && !state.isGenerating,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF880E4F)),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFAD1457),
+                                contentColor = Color.White,
+                                disabledContainerColor = Color(0xFF880E4F).copy(alpha = 0.45f),
+                                disabledContentColor = Color.White.copy(alpha = 0.72f)
+                            ),
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
-                                .weight(1.2f)
+                                .weight(1.25f)
                                 .minimumInteractiveComponentSize()
                                 .testTag("start_brahmastram_exam_button")
                         ) {
-                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("ব্রহ্মাস্ত্রম পরীক্ষা দাও", fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(
+                                text = "ব্রহ্মাস্ত্রম পরীক্ষা দাও",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                         FilledTonalButton(
                             onClick = {
                                 val fullText = state.notes.joinToString("\n\n════════════════════\n\n") { n ->
-                                    "■ ${n.title} (${n.chapter} • ${n.marksWeight} নম্বর • ${n.pyqBadge})\n${n.sureShotNoteBn}\n📌 মূল তথ্য: ${n.keyFormulaOrFact}\n\n${n.topperWritingStructureBn}"
+                                    val formulasFormatted = splitFormulaLines(n.keyFormulaOrFact)
+                                        .joinToString("\n") { "• $it" }
+                                    "■ ${n.title} (${n.chapter} • ${n.marksWeight} নম্বর • ${n.pyqBadge})\n${n.sureShotNoteBn}\n📌 মূল সূত্র/তথ্য:\n$formulasFormatted\n\n${n.topperWritingStructureBn}"
                                 }
                                 onExportNotesPdf(
                                     "ব্রহ্মাস্ত্রম_${state.selectedSubject.bengaliName}_সাজেশন",
@@ -343,7 +365,7 @@ private fun BrahmastramNotesStep(
                             enabled = state.notes.isNotEmpty(),
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
-                                .weight(0.8f)
+                                .weight(0.75f)
                                 .minimumInteractiveComponentSize()
                                 .testTag("export_brahmastram_pdf_button")
                         ) {
@@ -412,12 +434,13 @@ private fun BrahmastramNotesStep(
                                     Text(
                                         text = "${idx + 1}. ${note.title}",
                                         style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
                                         text = "${note.chapter} • ${note.marksWeight} নম্বর • ${note.pyqBadge}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFFC62828),
+                                        color = if (isDark) Color(0xFFFF9E96) else Color(0xFFC62828),
                                         fontWeight = FontWeight.SemiBold
                                     )
                                 }
@@ -431,7 +454,11 @@ private fun BrahmastramNotesStep(
                                 Icon(
                                     imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
                                     contentDescription = "Listen Note",
-                                    tint = if (isSpeaking) TerracottaAccent else OnlineCobalt
+                                    tint = if (isSpeaking) {
+                                        if (isDark) Color(0xFFFFAB91) else TerracottaAccent
+                                    } else {
+                                        if (isDark) Color(0xFF90CAF9) else OnlineCobalt
+                                    }
                                 )
                             }
                         }
@@ -441,12 +468,22 @@ private fun BrahmastramNotesStep(
                             FilterChip(
                                 selected = !showTopperTab,
                                 onClick = { showTopperTab = false },
-                                label = { Text("শিওর-শট নোটস") }
+                                label = { Text("শিওর-শট নোটস", fontWeight = FontWeight.SemiBold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFAD1457),
+                                    selectedLabelColor = Color.White,
+                                    labelColor = MaterialTheme.colorScheme.onSurface
+                                )
                             )
                             FilterChip(
                                 selected = showTopperTab,
                                 onClick = { showTopperTab = true },
-                                label = { Text("🏆 টপারের খাতায় যেভাবে লিখবে") }
+                                label = { Text("🏆 টপারের খাতায় যেভাবে লিখবে", fontWeight = FontWeight.SemiBold) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFAD1457),
+                                    selectedLabelColor = Color.White,
+                                    labelColor = MaterialTheme.colorScheme.onSurface
+                                )
                             )
                         }
 
@@ -456,19 +493,34 @@ private fun BrahmastramNotesStep(
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        if (note.keyFormulaOrFact.isNotBlank()) {
+                        val formulaLines = remember(note.keyFormulaOrFact) {
+                            splitFormulaLines(note.keyFormulaOrFact)
+                        }
+                        if (formulaLines.isNotEmpty()) {
                             Surface(
-                                color = OnlineCobalt.copy(alpha = 0.1f),
+                                color = OnlineCobalt.copy(alpha = if (isDark) 0.22f else 0.1f),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = "📌 মূল সূত্র/তথ্য: ${note.keyFormulaOrFact}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = OnlineCobalt,
-                                    modifier = Modifier.padding(10.dp)
-                                )
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "📌 মূল সূত্র / তথ্য:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark) Color(0xFFBBDEFB) else OnlineCobalt
+                                    )
+                                    formulaLines.forEach { line ->
+                                        Text(
+                                            text = if (formulaLines.size > 1) "• $line" else line,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isDark) Color.White else OnlineCobalt
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -486,6 +538,7 @@ private fun BrahmastramExamStep(
     onSubmitExam: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isDarkSurfaceTheme()
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -493,7 +546,7 @@ private fun BrahmastramExamStep(
     ) {
         item {
             Surface(
-                color = Color(0xFF880E4F).copy(alpha = 0.1f),
+                color = Color(0xFF880E4F).copy(alpha = if (isDark) 0.25f else 0.1f),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -519,12 +572,13 @@ private fun BrahmastramExamStep(
                     Text(
                         text = "প্রশ্ন ${idx + 1} (${q.marks} নম্বর • ${q.chapter})",
                         style = MaterialTheme.typography.labelMedium,
-                        color = OnlineCobalt,
+                        color = if (isDark) Color(0xFF90CAF9) else OnlineCobalt,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = q.questionText,
                         style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold
                     )
 
@@ -542,6 +596,7 @@ private fun BrahmastramExamStep(
                                 Text(
                                     text = optText,
                                     style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -563,16 +618,23 @@ private fun BrahmastramExamStep(
         item {
             Button(
                 onClick = onSubmitExam,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF880E4F)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFAD1457),
+                    contentColor = Color.White
+                ),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .minimumInteractiveComponentSize()
                     .testTag("submit_brahmastram_exam_button")
             ) {
-                Icon(Icons.Rounded.CheckCircle, contentDescription = null)
+                Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("উত্তরপত্র জমা দাও ও লাল-কালি মূল্যায়ন দেখো", fontWeight = FontWeight.Bold)
+                Text(
+                    text = "উত্তরপত্র জমা দাও ও লাল-কালি মূল্যায়ন দেখো",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -586,7 +648,12 @@ private fun BrahmastramResultStep(
     onExportReportPdf: (String, String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isDarkSurfaceTheme()
     val report = state.latestReport ?: return
+    val redAccent = if (isDark) Color(0xFFFF9E96) else Color(0xFFC62828)
+    val greenAccent = if (isDark) Color(0xFF81DFB5) else SageOffline
+    val blueAccent = if (isDark) Color(0xFF90CAF9) else OnlineCobalt
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -595,8 +662,10 @@ private fun BrahmastramResultStep(
         item {
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF880E4F).copy(alpha = 0.12f)),
-                border = BorderStroke(1.2.dp, Color(0xFF880E4F).copy(alpha = 0.4f))
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF880E4F).copy(alpha = if (isDark) 0.26f else 0.12f)
+                ),
+                border = BorderStroke(1.2.dp, Color(0xFFAD1457).copy(alpha = 0.55f))
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -606,15 +675,16 @@ private fun BrahmastramResultStep(
                         text = "ব্রহ্মাস্ত্রম ফলাফল: ${report.obtainedMarks} / ${report.maxMarks} (${report.accuracyPercent}%)",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF880E4F)
+                        color = if (isDark) Color(0xFFFFC1E3) else Color(0xFF880E4F)
                     )
                     Text(
                         text = report.redPenSummaryBn,
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     if (report.trapAlertsCount > 0) {
                         Surface(
-                            color = Color(0xFFC62828).copy(alpha = 0.14f),
+                            color = Color(0xFFC62828).copy(alpha = if (isDark) 0.28f else 0.14f),
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Row(
@@ -622,11 +692,11 @@ private fun BrahmastramResultStep(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Rounded.Warning, contentDescription = null, tint = Color(0xFFC62828))
+                                Icon(Icons.Rounded.Warning, contentDescription = null, tint = redAccent)
                                 Text(
                                     text = "🚨 লাল-কালি ও ট্র্যাপ অ্যালার্ট: এই পত্রে ${report.trapAlertsCount}টি নেতিবাচক ট্র্যাপ প্রশ্ন ছিল!",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = Color(0xFFC62828),
+                                    color = redAccent,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -639,8 +709,15 @@ private fun BrahmastramResultStep(
                         OutlinedButton(onClick = onBackToNotes, modifier = Modifier.weight(1f)) {
                             Text("নোটসে ফিরুন")
                         }
-                        Button(onClick = onRetakeExam, modifier = Modifier.weight(1f)) {
-                            Text("আবার পরীক্ষা")
+                        Button(
+                            onClick = onRetakeExam,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFAD1457),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("আবার পরীক্ষা", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                     FilledTonalButton(
@@ -678,8 +755,8 @@ private fun BrahmastramResultStep(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 border = BorderStroke(
                     1.dp,
-                    if (item.obtainedMarks >= item.maxMarks * 0.8f) SageOffline.copy(alpha = 0.45f)
-                    else Color(0xFFC62828).copy(alpha = 0.45f)
+                    if (item.obtainedMarks >= item.maxMarks * 0.8f) greenAccent.copy(alpha = 0.5f)
+                    else redAccent.copy(alpha = 0.5f)
                 )
             ) {
                 Column(
@@ -693,26 +770,32 @@ private fun BrahmastramResultStep(
                         Text(
                             text = "প্রশ্ন ${idx + 1} (${item.question.chapter})",
                             style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "${item.obtainedMarks}/${item.maxMarks}",
                             style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
-                            color = if (item.obtainedMarks >= item.maxMarks * 0.8f) SageOffline else Color(0xFFC62828),
+                            color = if (item.obtainedMarks >= item.maxMarks * 0.8f) greenAccent else redAccent,
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Text(text = item.question.questionText, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = item.question.questionText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
 
                     if (item.question.trapKeywords.isNotEmpty()) {
                         Surface(
-                            color = Color(0xFFFFEBEE),
+                            color = if (isDark) Color(0xFFC62828).copy(alpha = 0.25f) else Color(0xFFFFEBEE),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text(
                                 text = "🚨 প্রশ্ন ট্র্যাপ শব্দ: ${item.question.trapKeywords.joinToString(", ")}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFC62828),
+                                color = redAccent,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
@@ -721,7 +804,7 @@ private fun BrahmastramResultStep(
 
                     // Red-Pen Deduction Log
                     Surface(
-                        color = Color(0xFFC62828).copy(alpha = 0.07f),
+                        color = Color(0xFFC62828).copy(alpha = if (isDark) 0.18f else 0.07f),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -732,17 +815,21 @@ private fun BrahmastramResultStep(
                             Text(
                                 text = "✒️ নম্বর কাটার কারণ (Red-Pen Log):",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFC62828),
+                                color = redAccent,
                                 fontWeight = FontWeight.Bold
                             )
                             item.redPenDeductions.forEach { d ->
-                                Text(text = d, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    text = d,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                             item.unitOrGrammarAudit.forEach { u ->
                                 Text(
                                     text = u,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = OnlineCobalt
+                                    color = blueAccent
                                 )
                             }
                         }

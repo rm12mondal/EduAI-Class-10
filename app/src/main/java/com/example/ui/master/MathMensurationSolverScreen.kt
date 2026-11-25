@@ -278,19 +278,20 @@ fun MathMensurationSolverScreen(
                             }
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                                color = MaterialTheme.colorScheme.secondaryContainer
                             ) {
                                 val dimSummary = when (state.module) {
-                                    MathSolverModule.SPHERE -> "ব্যাসার্ধ r = ${fmt(rVal)} $unitLabel | ব্যাস d = ${fmt(2 * rVal)} $unitLabel"
-                                    MathSolverModule.CYLINDER -> "ব্যাসার্ধ r = ${fmt(rVal)} $unitLabel | উচ্চতা h = ${fmt(hVal)} $unitLabel"
-                                    MathSolverModule.CONE -> "ব্যাসার্ধ r = ${fmt(rVal)} $unitLabel | উচ্চতা h = ${fmt(hVal)} $unitLabel | তির্যক উচ্চতা l = ${fmt(lVal)} $unitLabel"
+                                    MathSolverModule.SPHERE -> "ব্যাসার্ধ r = ${fmt(rVal)} $unitLabel\nব্যাস d = ${fmt(2 * rVal)} $unitLabel"
+                                    MathSolverModule.CYLINDER -> "ব্যাসার্ধ r = ${fmt(rVal)} $unitLabel\nউচ্চতা h = ${fmt(hVal)} $unitLabel"
+                                    MathSolverModule.CONE -> "ব্যাসার্ধ r = ${fmt(rVal)} $unitLabel\nউচ্চতা h = ${fmt(hVal)} $unitLabel\nতির্যক উচ্চতা l = ${fmt(lVal)} $unitLabel"
                                     else -> ""
                                 }
                                 Text(
                                     text = dimSummary,
                                     style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
                             }
                         }

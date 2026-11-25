@@ -57,6 +57,9 @@ import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
+import com.example.ui.theme.highContrastAccent
+import com.example.ui.theme.isDarkSurfaceTheme
+import com.example.ui.theme.splitFormulaLines
 
 /**
  * Feature #5: "পকেট বুক (Pocket Book)" — 100% Offline Vault of Math Formulas/Theorems,
@@ -129,11 +132,13 @@ fun PocketBookScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    val isDark = isDarkSurfaceTheme()
+                    val pdfBadgeTint = if (isDark) Color(0xFFFF9E96) else Color(0xFFC62828)
                     Surface(
                         onClick = onOpenSavedPdfLibrary,
                         shape = RoundedCornerShape(999.dp),
-                        color = Color(0xFFC62828).copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, Color(0xFFC62828).copy(alpha = 0.4f)),
+                        color = Color(0xFFC62828).copy(alpha = if (isDark) 0.25f else 0.12f),
+                        border = BorderStroke(1.dp, pdfBadgeTint.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .testTag("pocket_book_saved_pdfs_btn")
@@ -143,11 +148,11 @@ fun PocketBookScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = Color(0xFFC62828), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null, tint = pdfBadgeTint, modifier = Modifier.size(16.dp))
                             Text(
                                 text = "আমার PDF ($savedPdfCount)",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFFC62828),
+                                color = pdfBadgeTint,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -214,10 +219,15 @@ fun PocketBookScreen(
                 }
 
                 items(filtered, key = { it.id }) { entry ->
+                    val isDark = isDarkSurfaceTheme()
+                    val readableAccent = highContrastAccent(entry.subject.accentColor)
+                    val formulaLines = remember(entry.formulaOrFact) {
+                        splitFormulaLines(entry.formulaOrFact)
+                    }
                     Card(
                         shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, entry.subject.accentColor.copy(alpha = 0.35f)),
+                        border = BorderStroke(1.dp, readableAccent.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -237,12 +247,13 @@ fun PocketBookScreen(
                                     Icon(
                                         imageVector = Icons.Rounded.MenuBook,
                                         contentDescription = null,
-                                        tint = entry.subject.accentColor,
+                                        tint = readableAccent,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Text(
                                         text = entry.title,
                                         style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -251,7 +262,7 @@ fun PocketBookScreen(
                                         onExportCardPdf(
                                             "পকেট_বুক_${entry.title}",
                                             entry.title,
-                                            "${entry.formulaOrFact}\n\n💡 পরীক্ষার টিপ:\n${entry.examTip}"
+                                            "${formulaLines.joinToString("\n")}\n\n💡 পরীক্ষার টিপ:\n${entry.examTip}"
                                         )
                                     },
                                     modifier = Modifier.minimumInteractiveComponentSize()
@@ -259,23 +270,29 @@ fun PocketBookScreen(
                                     Icon(
                                         imageVector = Icons.Rounded.PictureAsPdf,
                                         contentDescription = "Save Card as PDF",
-                                        tint = Color(0xFFC62828),
+                                        tint = if (isDark) Color(0xFFFF9E96) else Color(0xFFC62828),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
 
                             Surface(
-                                color = entry.subject.accentColor.copy(alpha = 0.08f),
+                                color = entry.subject.accentColor.copy(alpha = if (isDark) 0.22f else 0.08f),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    text = entry.formulaOrFact,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonoFontFamily),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(12.dp)
-                                )
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    formulaLines.forEach { line ->
+                                        Text(
+                                            text = if (formulaLines.size > 1) "• $line" else line,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonoFontFamily),
+                                            color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
                             }
 
                             Row(

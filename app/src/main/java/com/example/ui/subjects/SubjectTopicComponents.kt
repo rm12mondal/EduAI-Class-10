@@ -67,6 +67,9 @@ import com.example.data.local.TopicImportance
 import com.example.data.master.StrictWbbsePrecisionEngine
 import com.example.model.WbbseSubject
 import com.example.ui.theme.MonoFontFamily
+import com.example.ui.theme.highContrastAccent
+import com.example.ui.theme.isDarkSurfaceTheme
+import com.example.ui.theme.splitFormulaLines
 
 internal data class SyllabusChapterGroup(
     val chapterOrder: Int,
@@ -82,16 +85,17 @@ internal fun TopicImportanceBadge(
     importanceLevel: String,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isDarkSurfaceTheme()
     val (label, bgColor, textColor) = when (importanceLevel) {
         TopicImportance.VVI -> Triple(
             "১০০% দরকারি / VVI",
-            Color(0xFFD32F2F).copy(alpha = 0.14f),
-            Color(0xFFC62828)
+            Color(0xFFD32F2F).copy(alpha = if (isDark) 0.28f else 0.14f),
+            if (isDark) Color(0xFFFFB4AB) else Color(0xFFC62828)
         )
         TopicImportance.MEDIUM -> Triple(
             "মাঝারি গুরুত্ব",
-            Color(0xFFEF6C00).copy(alpha = 0.14f),
-            Color(0xFFE65100)
+            Color(0xFFEF6C00).copy(alpha = if (isDark) 0.28f else 0.14f),
+            if (isDark) Color(0xFFFFCC80) else Color(0xFFE65100)
         )
         else -> Triple(
             "কম দরকারি",
@@ -143,6 +147,11 @@ internal fun TopicImportanceFilterBar(
     onToggleExpandAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isDarkSurfaceTheme()
+    val readableAccent = highContrastAccent(accentColor)
+    val vviTextColor = if (isDark) Color(0xFFFF9E96) else Color(0xFFC62828)
+    val mediumTextColor = if (isDark) Color(0xFFFFCC80) else Color(0xFFE65100)
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -165,7 +174,7 @@ internal fun TopicImportanceFilterBar(
                     Icon(
                         imageVector = Icons.Rounded.FilterAlt,
                         contentDescription = null,
-                        tint = accentColor,
+                        tint = readableAccent,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
@@ -178,14 +187,14 @@ internal fun TopicImportanceFilterBar(
 
                 TextButton(
                     onClick = onToggleExpandAll,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                     modifier = Modifier.testTag("toggle_expand_all_chapters_btn")
                 ) {
                     Text(
                         text = if (allExpanded) "সব বন্ধ করুন" else "সব অধ্যায় খুলুন",
                         style = MaterialTheme.typography.labelMedium,
-                        color = accentColor,
-                        fontWeight = FontWeight.SemiBold
+                        color = if (isDark) Color(0xFFEAF2FF) else accentColor,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -201,6 +210,7 @@ internal fun TopicImportanceFilterBar(
                         Text(
                             text = "সব টপিক দেখুন ($totalTopicCount)",
                             style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -213,9 +223,11 @@ internal fun TopicImportanceFilterBar(
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = accentColor.copy(alpha = 0.16f),
-                        selectedLabelColor = accentColor,
-                        selectedLeadingIconColor = accentColor
+                        selectedContainerColor = accentColor,
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White,
+                        labelColor = MaterialTheme.colorScheme.onSurface,
+                        iconColor = readableAccent
                     ),
                     modifier = Modifier
                         .weight(1f)
@@ -243,9 +255,11 @@ internal fun TopicImportanceFilterBar(
                         )
                     },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFFD32F2F).copy(alpha = 0.16f),
-                        selectedLabelColor = Color(0xFFC62828),
-                        selectedLeadingIconColor = Color(0xFFC62828)
+                        selectedContainerColor = Color(0xFFC62828),
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White,
+                        labelColor = MaterialTheme.colorScheme.onSurface,
+                        iconColor = vviTextColor
                     ),
                     modifier = Modifier
                         .weight(1f)
@@ -262,7 +276,7 @@ internal fun TopicImportanceFilterBar(
                 Text(
                     text = "VVI: $vviTopicCount",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFC62828),
+                    color = vviTextColor,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
@@ -273,7 +287,7 @@ internal fun TopicImportanceFilterBar(
                 Text(
                     text = "মাঝারি গুরুত্ব: $mediumTopicCount",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFE65100),
+                    color = mediumTextColor,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
@@ -305,12 +319,16 @@ internal fun ChapterAccordionCard(
     onToggleBookmark: (MasterDataEntity) -> Unit,
     onDeleteCustomNote: (Long) -> Unit
 ) {
+    val isDark = isDarkSurfaceTheme()
+    val readableAccent = highContrastAccent(accentColor)
+    val audioTint = highContrastAccent(Color(0xFF0E7490))
+
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(
             width = if (isExpanded) 1.3.dp else 1.dp,
-            color = if (isExpanded) accentColor.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
+            color = if (isExpanded) readableAccent.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -330,8 +348,8 @@ internal fun ChapterAccordionCard(
                         .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (group.isMapModule) Color(0xFF00796B).copy(alpha = 0.16f)
-                            else accentColor.copy(alpha = 0.14f)
+                            if (group.isMapModule) Color(0xFF00796B).copy(alpha = if (isDark) 0.34f else 0.16f)
+                            else accentColor.copy(alpha = if (isDark) 0.34f else 0.14f)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -339,7 +357,7 @@ internal fun ChapterAccordionCard(
                         Icon(
                             imageVector = Icons.Rounded.Map,
                             contentDescription = "Map Pointing",
-                            tint = Color(0xFF00796B),
+                            tint = if (isDark) Color.White else Color(0xFF00796B),
                             modifier = Modifier.size(22.dp)
                         )
                     } else {
@@ -347,7 +365,7 @@ internal fun ChapterAccordionCard(
                             text = chapterIndex.toString(),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = accentColor
+                            color = if (isDark) Color.White else accentColor
                         )
                     }
                 }
@@ -373,14 +391,14 @@ internal fun ChapterAccordionCard(
                         )
                         if (group.vviCount > 0) {
                             Surface(
-                                color = Color(0xFFD32F2F).copy(alpha = 0.12f),
+                                color = Color(0xFFD32F2F).copy(alpha = if (isDark) 0.28f else 0.12f),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
                                     text = "${group.vviCount}টি VVI",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFC62828),
+                                    color = if (isDark) Color(0xFFFFB4AB) else Color(0xFFC62828),
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
                             }
@@ -397,7 +415,7 @@ internal fun ChapterAccordionCard(
                     Icon(
                         imageVector = Icons.Rounded.Headphones,
                         contentDescription = "Listen Audio Revision",
-                        tint = Color(0xFF0E7490),
+                        tint = audioTint,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -405,7 +423,7 @@ internal fun ChapterAccordionCard(
                 Icon(
                     imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                     contentDescription = if (isExpanded) "Collapse chapter" else "Expand chapter",
-                    tint = accentColor,
+                    tint = readableAccent,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -421,8 +439,8 @@ internal fun ChapterAccordionCard(
                     FilledTonalButton(
                         onClick = onOpenAudioRevision,
                         colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = Color(0xFF0E7490).copy(alpha = 0.13f),
-                            contentColor = Color(0xFF0E7490)
+                            containerColor = Color(0xFF0E7490).copy(alpha = if (isDark) 0.28f else 0.13f),
+                            contentColor = if (isDark) Color(0xFFB2EBF2) else Color(0xFF0E7490)
                         ),
                         shape = RoundedCornerShape(12.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
@@ -474,6 +492,11 @@ internal fun MasterNoteCard(
     onToggleBookmark: () -> Unit,
     onDeleteCustom: (() -> Unit)?
 ) {
+    val isDark = isDarkSurfaceTheme()
+    val readableAccent = highContrastAccent(accentColor)
+    val formulaLines = remember(note.keyFormulaOrFact) {
+        splitFormulaLines(note.keyFormulaOrFact)
+    }
     val pyqTrend = remember(note.subjectId, note.chapterName, note.topicTitle, note.importanceLevel) {
         StrictWbbsePrecisionEngine.getPyqTrend(
             subjectId = note.subjectId,
@@ -507,13 +530,14 @@ internal fun MasterNoteCard(
                         TopicImportanceBadge(importanceLevel = note.importanceLevel)
                         if (subjectBadge != null) {
                             Surface(
-                                color = accentColor.copy(alpha = 0.14f),
+                                color = accentColor.copy(alpha = if (isDark) 0.34f else 0.14f),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Text(
                                     text = subjectBadge,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = accentColor,
+                                    color = if (isDark) Color.White else accentColor,
+                                    fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -522,18 +546,26 @@ internal fun MasterNoteCard(
 
                     if (pyqTrend.isHotTopic || pyqTrend.yearsBadge.isNotBlank()) {
                         Surface(
-                            color = if (pyqTrend.isHotTopic) Color(0xFFE65100).copy(alpha = 0.13f) else MaterialTheme.colorScheme.surfaceVariant,
+                            color = if (pyqTrend.isHotTopic) {
+                                Color(0xFFE65100).copy(alpha = if (isDark) 0.28f else 0.13f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(
                                 0.8.dp,
-                                if (pyqTrend.isHotTopic) Color(0xFFE65100).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant
+                                if (pyqTrend.isHotTopic) Color(0xFFE65100).copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant
                             )
                         ) {
                             Text(
                                 text = "${pyqTrend.yearsBadge} • ${pyqTrend.probabilityBadge}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (pyqTrend.isHotTopic) Color(0xFFBF360C) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (pyqTrend.isHotTopic) {
+                                    if (isDark) Color(0xFFFFCC80) else Color(0xFFBF360C)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
@@ -545,7 +577,7 @@ internal fun MasterNoteCard(
                         Text(
                             text = note.chapterName,
                             style = MaterialTheme.typography.labelMedium,
-                            color = accentColor,
+                            color = readableAccent,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -566,7 +598,7 @@ internal fun MasterNoteCard(
                         Icon(
                             imageVector = Icons.Rounded.PictureAsPdf,
                             contentDescription = "Save note as PDF",
-                            tint = Color(0xFFC62828)
+                            tint = if (isDark) Color(0xFFFF9E96) else Color(0xFFC62828)
                         )
                     }
                     if (onDeleteCustom != null) {
@@ -582,7 +614,7 @@ internal fun MasterNoteCard(
                         Icon(
                             imageVector = if (note.isBookmarked) Icons.Rounded.Bookmark else Icons.Outlined.BookmarkBorder,
                             contentDescription = stringResource(R.string.subjects_bookmark_cd),
-                            tint = if (note.isBookmarked) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = if (note.isBookmarked) readableAccent else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -594,18 +626,25 @@ internal fun MasterNoteCard(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            if (note.keyFormulaOrFact.isNotBlank()) {
+            if (formulaLines.isNotEmpty()) {
                 Surface(
-                    color = accentColor.copy(alpha = 0.08f),
+                    color = accentColor.copy(alpha = if (isDark) 0.22f else 0.08f),
+                    border = BorderStroke(0.8.dp, readableAccent.copy(alpha = if (isDark) 0.35f else 0.18f)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = note.keyFormulaOrFact,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(10.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        formulaLines.forEach { formulaLine ->
+                            Text(
+                                text = if (formulaLines.size > 1) "• $formulaLine" else formulaLine,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
+                                color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             }
 
@@ -633,7 +672,10 @@ internal fun MasterNoteCard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onOpenSmartLearning,
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accentColor,
+                        contentColor = Color.White
+                    ),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -643,10 +685,15 @@ internal fun MasterNoteCard(
                     Icon(
                         imageVector = Icons.Rounded.School,
                         contentDescription = null,
+                        tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("স্মার্ট লার্নিং (সহজ বাংলায় বোঝো)")
+                    Text(
+                        text = "স্মার্ট লার্নিং (সহজ বাংলায় বোঝো)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 FilledTonalButton(
