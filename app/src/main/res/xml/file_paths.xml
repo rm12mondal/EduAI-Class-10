@@ -6,6 +6,12 @@
     <files-path
         name="chat_uploads"
         path="chat_uploads/" />
+    <files-path
+        name="ai_diagrams"
+        path="ai_diagrams/" />
+    <cache-path
+        name="edu_backups"
+        path="edu_backups/" />
     <external-files-path
         name="eduai_pdfs"
         path="Download/EduAI_Notes/" />

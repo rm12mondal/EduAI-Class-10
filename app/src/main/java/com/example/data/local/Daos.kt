@@ -41,6 +41,18 @@ interface MasterDataDao {
     @Query("UPDATE wbbse_master_data SET isBookmarked = :bookmarked WHERE id = :id")
     suspend fun updateBookmark(id: Long, bookmarked: Boolean)
 
+    @Query("SELECT * FROM wbbse_master_data WHERE isUserCreated = 1 ORDER BY id ASC")
+    suspend fun getUserCreatedNotesSnapshot(): List<MasterDataEntity>
+
+    @Query("DELETE FROM wbbse_master_data WHERE isUserCreated = 1")
+    suspend fun deleteAllUserCreatedNotes()
+
+    @Query("UPDATE wbbse_master_data SET isBookmarked = 0 WHERE isUserCreated = 0")
+    suspend fun clearBuiltInBookmarks()
+
+    @Query("UPDATE wbbse_master_data SET isBookmarked = 1 WHERE subjectId = :subjectId AND topicTitle = :topicTitle")
+    suspend fun bookmarkBySubjectAndTitle(subjectId: String, topicTitle: String)
+
     @Query("DELETE FROM wbbse_master_data WHERE id = :id AND isUserCreated = 1")
     suspend fun deleteUserNote(id: Long)
 }
@@ -56,11 +68,23 @@ interface ChatMessageDao {
     @Query("SELECT * FROM chat_messages WHERE sectionId = :sectionId ORDER BY timestamp ASC, id ASC")
     suspend fun getMessagesBySectionSnapshot(sectionId: String): List<ChatMessageEntity>
 
+    @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC, id ASC")
+    suspend fun getAllMessagesSnapshot(): List<ChatMessageEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMessages(messages: List<ChatMessageEntity>)
+
     @Query("UPDATE chat_messages SET diagramPath = :diagramPath WHERE id = :id")
     suspend fun updateDiagramPath(id: Long, diagramPath: String?)
+
+    @Query("UPDATE chat_messages SET imagePath = NULL WHERE imagePath = :path")
+    suspend fun clearImagePathReference(path: String)
+
+    @Query("UPDATE chat_messages SET diagramPath = NULL WHERE diagramPath = :path")
+    suspend fun clearDiagramPathReference(path: String)
 
     @Query("DELETE FROM chat_messages WHERE sectionId = :sectionId")
     suspend fun clearSection(sectionId: String)

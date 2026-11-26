@@ -60,28 +60,30 @@ class SmartLearningController(
 
     init {
         scope.launch {
-            val saved = studyRepository.getSectionMessagesSnapshot(ChatSection.SMART_LEARNING)
-            if (saved.isNotEmpty()) {
-                val restored = saved.map { entity ->
-                    SmartLearningMessage(
-                        id = entity.id,
-                        role = entity.role,
-                        content = entity.content,
-                        topicLabel = entity.topicLabel.ifBlank { entity.content.take(48) },
-                        subject = WbbseSubject.fromId(entity.subjectId),
-                        chapterName = entity.topicLabel.takeIf { it.isNotBlank() },
-                        mode = InferenceMode.fromStorage(entity.mode),
-                        sourceLabel = entity.sourceLabel,
-                        userPhotoPath = entity.imagePath,
-                        generatedDiagramPath = entity.diagramPath,
-                        timestamp = entity.timestamp
-                    )
-                }
-                val maxId = restored.maxOfOrNull { it.id } ?: 50_000L
-                if (maxId >= nextMessageId) nextMessageId = maxId + 1
-                _uiState.update { it.copy(messages = restored) }
-            }
+            reloadPersistedMessages()
         }
+    }
+
+    suspend fun reloadPersistedMessages() {
+        val saved = studyRepository.getSectionMessagesSnapshot(ChatSection.SMART_LEARNING)
+        val restored = saved.map { entity ->
+            SmartLearningMessage(
+                id = entity.id,
+                role = entity.role,
+                content = entity.content,
+                topicLabel = entity.topicLabel.ifBlank { entity.content.take(48) },
+                subject = WbbseSubject.fromId(entity.subjectId),
+                chapterName = entity.topicLabel.takeIf { it.isNotBlank() },
+                mode = InferenceMode.fromStorage(entity.mode),
+                sourceLabel = entity.sourceLabel,
+                userPhotoPath = entity.imagePath,
+                generatedDiagramPath = entity.diagramPath,
+                timestamp = entity.timestamp
+            )
+        }
+        val maxId = restored.maxOfOrNull { it.id } ?: 50_000L
+        if (maxId >= nextMessageId) nextMessageId = maxId + 1
+        _uiState.update { it.copy(messages = restored) }
     }
 
     fun openSmartLearning(

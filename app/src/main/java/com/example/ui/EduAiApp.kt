@@ -48,6 +48,7 @@ import com.example.model.DailyPlannerUiState
 import com.example.model.PocketBookCategory
 import com.example.model.SpacedRevisionUiState
 import com.example.model.WbbseSubject
+import com.example.ui.backup.RecoveryKeyBackupScreen
 import com.example.ui.chat.ChatScreen
 import com.example.ui.exam.ExamScreen
 import com.example.ui.extras.AudioRevisionPlayerModal
@@ -72,6 +73,7 @@ import com.example.ui.master.WritingStudioScreen
 import com.example.ui.model.ModelManagerScreen
 import com.example.ui.subjects.SubjectsScreen
 import com.example.ui.topper.TopperScreen
+import com.example.ui.vault.SubjectMediaVaultScreen
 import com.example.viewmodel.EduAiUiState
 import com.example.viewmodel.EduAiViewModel
 import com.example.viewmodel.TopperUiState
@@ -156,10 +158,14 @@ fun EduAiApp(
     val fastLearningChatState by viewModel.fastLearningChatState.collectAsStateWithLifecycle()
     val stepByStepMemoryState by viewModel.stepByStepMemoryState.collectAsStateWithLifecycle()
     val stepByStepMemoryChatState by viewModel.stepByStepMemoryChatState.collectAsStateWithLifecycle()
+    val mediaVaultState by viewModel.mediaVaultState.collectAsStateWithLifecycle()
+    val recoveryState by viewModel.recoveryState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val hasFullScreenOverlay = stepByStepMemoryState.isOpen ||
+    val hasFullScreenOverlay = mediaVaultState.isOpen ||
+        recoveryState.isOpen ||
+        stepByStepMemoryState.isOpen ||
         fastLearningState.isOpen ||
         smartLearningState.isOpen ||
         mapBoardState.isOpen ||
@@ -244,6 +250,41 @@ fun EduAiApp(
             }
         ) { innerPadding ->
             when {
+                mediaVaultState.isOpen -> {
+                    SubjectMediaVaultScreen(
+                        state = mediaVaultState,
+                        onSelectSubject = viewModel::selectVaultSubject,
+                        onSelectTypeFilter = viewModel::selectVaultTypeFilter,
+                        onRefresh = viewModel::refreshMediaVault,
+                        onDeleteItem = viewModel::deleteVaultItem,
+                        onClearUnusedFiles = viewModel::clearUnusedVaultFiles,
+                        onClearFilteredSubjectFiles = viewModel::clearFilteredSubjectVaultFiles,
+                        onDismissStatus = viewModel::clearVaultStatus,
+                        onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        onClose = viewModel::closeMediaVault,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
+                recoveryState.isOpen -> {
+                    RecoveryKeyBackupScreen(
+                        state = recoveryState,
+                        onSelectTab = viewModel::selectRecoveryTab,
+                        onUpdateRestoreKeyInput = viewModel::updateRestoreKeyInput,
+                        onExportToLocalUri = viewModel::exportEncryptedBackupToLocalUri,
+                        onExportToGoogleDrive = viewModel::exportEncryptedBackupForGoogleDrive,
+                        onRestoreFromUri = viewModel::restoreEncryptedBackupFromUri,
+                        onDismissStatus = viewModel::clearRecoveryStatus,
+                        onShowToast = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        onClose = viewModel::closeRecoveryBackup,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
                 audioRevisionState.isOpen -> {
                     AudioRevisionPlayerModal(
                         state = audioRevisionState,
@@ -607,6 +648,7 @@ fun EduAiApp(
                                 spacedRevisionState = spacedRevisionState,
                                 savedPdfCount = pdfState.items.size,
                                 backupStatusMessage = backupStatusMessage,
+                                secretRecoveryKey = recoveryState.secretRecoveryKey,
                                 voiceInjectedText = voiceInjectedText,
                                 viewModel = viewModel,
                                 onShowSnackbar = { msg ->
@@ -661,6 +703,8 @@ fun EduAiApp(
             onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
             onShortcutFastLearning = viewModel::shortcutOpenFastLearning,
             onShortcutStepByStepMemory = viewModel::shortcutOpenStepByStepMemory,
+            onShortcutMediaVault = viewModel::shortcutOpenMediaVault,
+            onShortcutRecoveryBackup = viewModel::shortcutOpenRecoveryBackup,
             onShortcutSmartLearning = viewModel::shortcutOpenSmartLearning,
             onShortcutBrahmastram = viewModel::shortcutOpenBrahmastram,
             onShortcutGrammarLab = viewModel::shortcutOpenGrammarLab,
@@ -716,6 +760,7 @@ private fun ActiveScreenHost(
     spacedRevisionState: SpacedRevisionUiState,
     savedPdfCount: Int,
     backupStatusMessage: String?,
+    secretRecoveryKey: String,
     voiceInjectedText: String?,
     viewModel: EduAiViewModel,
     onShowSnackbar: (String) -> Unit
@@ -863,7 +908,9 @@ private fun ActiveScreenHost(
             backupStatusMessage = backupStatusMessage,
             onExportBackupUri = viewModel::exportProgressBackup,
             onImportBackupUri = viewModel::importProgressBackup,
-            onDismissBackupStatus = viewModel::clearBackupStatus
+            onDismissBackupStatus = viewModel::clearBackupStatus,
+            secretRecoveryKey = secretRecoveryKey,
+            onOpenRecoveryKeyBackup = { viewModel.openRecoveryBackup(0) }
         )
     }
 }

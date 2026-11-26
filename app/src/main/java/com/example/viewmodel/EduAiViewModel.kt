@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
@@ -69,17 +70,21 @@ import com.example.model.LanguageLabMode
 import com.example.model.LanguageLabUiState
 import com.example.model.MathSolverModule
 import com.example.model.MathSolverUiState
+import com.example.model.MediaVaultItem
 import com.example.model.PocketBookCategory
 import com.example.model.PocketBookUiState
+import com.example.model.RecoveryKeyBackupUiState
 import com.example.model.SavedPdfLibraryUiState
 import com.example.model.ScorePredictorSummary
 import com.example.model.SectionChatUiState
 import com.example.model.SpacedRevisionUiState
 import com.example.model.StepByStepMemoryUiState
+import com.example.model.SubjectMediaVaultUiState
 import com.example.model.SyllabusPlanOption
 import com.example.model.TopperSectionType
 import com.example.model.TopperSubjectTrack
 import com.example.model.TtsVoiceSettings
+import com.example.model.VaultMediaType
 import com.example.model.WbbseSubject
 import com.example.model.WritingFormatType
 import com.example.model.WritingLanguage
@@ -342,6 +347,21 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     val mathSolverState: StateFlow<MathSolverUiState> = masterUpgradeController.mathSolverState
     val backupStatusMessage: StateFlow<String?> = masterUpgradeController.backupStatusMessage
 
+    private val storageAndRecoveryController = StorageAndRecoveryController(
+        appContext = appContext,
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        settingsDataStore = settingsDataStore,
+        onAfterPdfChanged = { masterUpgradeController.refreshSavedPdfs() },
+        onAfterEncryptedRestore = {
+            reloadPersistedExamChatFromRoom()
+            smartLearningController.reloadPersistedMessages()
+        }
+    )
+
+    val mediaVaultState: StateFlow<SubjectMediaVaultUiState> = storageAndRecoveryController.mediaVaultState
+    val recoveryState: StateFlow<RecoveryKeyBackupUiState> = storageAndRecoveryController.recoveryState
+
     private val localState = MutableStateFlow(LocalUiNavigationState())
     private var generationJob: Job? = null
     private var examChatJob: Job? = null
@@ -411,30 +431,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             studyRepository.ensureSeeded()
-            // Restore persisted Mock Exam chat messages from Room
-            val savedExamMsgs = studyRepository.getSectionMessagesSnapshot(ChatSection.MOCK_EXAM)
-            if (savedExamMsgs.isNotEmpty()) {
-                val restoredExamMsgs = savedExamMsgs.map { entity ->
-                    val restoredIntent = ExamChatIntent.entries.firstOrNull { it.name == entity.topicLabel }
-                        ?: ExamChatIntent.DIRECT_STUDY
-                    ExamChatMessage(
-                        id = entity.id,
-                        role = entity.role,
-                        content = entity.content,
-                        intent = restoredIntent,
-                        subject = WbbseSubject.fromId(entity.subjectId),
-                        mode = InferenceMode.fromStorage(entity.mode),
-                        sourceLabel = entity.sourceLabel,
-                        userPhotoPath = entity.imagePath,
-                        generatedDiagramPath = entity.diagramPath,
-                        latencyMs = entity.latencyMs,
-                        timestamp = entity.timestamp
-                    )
-                }
-                localState.update { state ->
-                    state.copy(examChat = state.examChat.copy(messages = restoredExamMsgs))
-                }
-            }
+            reloadPersistedExamChatFromRoom()
             val allNotesSnapshot = studyRepository.getMasterDataSnapshot(null)
             topperExtrasController.ensureTodayPlanInitialized(allNotesSnapshot)
             masterUpgradeController.ensureSpacedRevisionSeeded(allNotesSnapshot)
@@ -446,6 +443,32 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
             if (detectedPath != stored.activeModelPath) {
                 settingsDataStore.setActiveModelPath(detectedPath)
             }
+        }
+    }
+
+    private suspend fun reloadPersistedExamChatFromRoom() {
+        val savedExamMsgs = studyRepository.getSectionMessagesSnapshot(ChatSection.MOCK_EXAM)
+        val restoredExamMsgs = savedExamMsgs.map { entity ->
+            val restoredIntent = ExamChatIntent.entries.firstOrNull { it.name == entity.topicLabel }
+                ?: ExamChatIntent.DIRECT_STUDY
+            ExamChatMessage(
+                id = entity.id,
+                role = entity.role,
+                content = entity.content,
+                intent = restoredIntent,
+                subject = WbbseSubject.fromId(entity.subjectId),
+                mode = InferenceMode.fromStorage(entity.mode),
+                sourceLabel = entity.sourceLabel,
+                userPhotoPath = entity.imagePath,
+                generatedDiagramPath = entity.diagramPath,
+                latencyMs = entity.latencyMs,
+                timestamp = entity.timestamp
+            )
+        }
+        val maxId = restoredExamMsgs.maxOfOrNull { it.id } ?: 10_000L
+        if (maxId >= nextExamChatMsgId) nextExamChatMsgId = maxId + 1
+        localState.update { state ->
+            state.copy(examChat = state.examChat.copy(messages = restoredExamMsgs))
         }
     }
 
@@ -1939,6 +1962,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeAllOverlaysForShortcut() {
+        storageAndRecoveryController.closeMediaVault()
+        storageAndRecoveryController.closeRecoveryBackup()
         closeStepByStepMemory()
         closeFastLearning()
         smartLearningController.closeSmartLearning()
@@ -2130,6 +2155,88 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     fun shortcutOpenSettings() {
         closeAllOverlaysForShortcut()
         selectTab(AppTab.MODEL_HUB)
+    }
+
+    // ==================== Subject-Wise Media & PDF Vault ====================
+
+    fun openMediaVault(initialSubject: WbbseSubject? = null) {
+        storageAndRecoveryController.openMediaVault(initialSubject)
+    }
+
+    fun closeMediaVault() {
+        storageAndRecoveryController.closeMediaVault()
+    }
+
+    fun selectVaultSubject(subject: WbbseSubject?) {
+        storageAndRecoveryController.selectVaultSubject(subject)
+    }
+
+    fun selectVaultTypeFilter(type: VaultMediaType?) {
+        storageAndRecoveryController.selectVaultTypeFilter(type)
+    }
+
+    fun refreshMediaVault() {
+        storageAndRecoveryController.refreshMediaVault()
+    }
+
+    fun deleteVaultItem(item: MediaVaultItem) {
+        storageAndRecoveryController.deleteVaultItem(item)
+    }
+
+    fun clearUnusedVaultFiles() {
+        storageAndRecoveryController.clearUnusedVaultFiles()
+    }
+
+    fun clearFilteredSubjectVaultFiles() {
+        storageAndRecoveryController.clearFilteredSubjectFiles()
+    }
+
+    fun clearVaultStatus() {
+        storageAndRecoveryController.clearVaultStatus()
+    }
+
+    fun shortcutOpenMediaVault() {
+        closeAllOverlaysForShortcut()
+        openMediaVault()
+    }
+
+    // ==================== Secret Recovery Key & Dual Encrypted Backup ====================
+
+    fun openRecoveryBackup(initialTabIndex: Int = 0) {
+        storageAndRecoveryController.openRecoveryBackup(initialTabIndex)
+    }
+
+    fun closeRecoveryBackup() {
+        storageAndRecoveryController.closeRecoveryBackup()
+    }
+
+    fun selectRecoveryTab(tabIndex: Int) {
+        storageAndRecoveryController.selectRecoveryTab(tabIndex)
+    }
+
+    fun updateRestoreKeyInput(raw: String) {
+        storageAndRecoveryController.updateRestoreKeyInput(raw)
+    }
+
+    fun exportEncryptedBackupToLocalUri(uri: Uri) {
+        storageAndRecoveryController.exportEncryptedBackupToLocalUri(uri)
+    }
+
+    fun exportEncryptedBackupForGoogleDrive(onLaunchShareIntent: (Intent) -> Unit) {
+        storageAndRecoveryController.exportEncryptedBackupForGoogleDrive(onLaunchShareIntent)
+    }
+
+    fun restoreEncryptedBackupFromUri(uri: Uri) {
+        storageAndRecoveryController.restoreEncryptedBackupFromUri(uri)
+    }
+
+    fun clearRecoveryStatus() {
+        storageAndRecoveryController.clearRecoveryStatus()
+    }
+
+    fun shortcutOpenRecoveryBackup() {
+        closeAllOverlaysForShortcut()
+        openRecoveryBackup(initialTabIndex = 0)
     }
 
     private data class DataBundle(

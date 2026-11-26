@@ -8,17 +8,23 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.max
 
 /**
  * Zero-storage-permission helper for creating FileProvider camera capture URIs,
- * downsampling notebook photos well under Firebase AI Logic's 20MB inline limit,
- * and persisting local thumbnails for chat history display.
+ * automatic Smart Image Compression (max 1024px longest edge + ~80% JPEG quality,
+ * targeting ~150-200 KB to save ~95% storage while keeping handwriting & diagrams crisp),
+ * and persisting local chat uploads & AI diagrams.
  */
 object NotebookImageHelper {
     private const val TAG = "NotebookImageHelper"
+    const val SMART_MAX_DIMENSION_PX = 1024
+    private const val SMART_JPEG_QUALITY_INITIAL = 80
+    private const val SMART_JPEG_QUALITY_FLOOR = 66
+    private const val TARGET_MAX_FILE_BYTES = 210 * 1024 // ~205 KB soft ceiling
 
     fun createTempCameraImageUri(context: Context): Uri {
         val photosDir = File(context.cacheDir, "notebook_photos").apply {
@@ -32,11 +38,17 @@ object NotebookImageHelper {
         )
     }
 
+    /**
+     * Loads and automatically resizes any camera or gallery image to max 1024px longest edge
+     * so every chat section (Main Chat, Smart Learning, Brahmastram, Mock Exam, Mind Map,
+     * Fast Learning, Step-by-Step Tutor) automatically benefits from Smart Compression.
+     */
     suspend fun loadScaledBitmap(
         context: Context,
         uri: Uri,
-        maxDimensionPx: Int = 1440
+        maxDimensionPx: Int = SMART_MAX_DIMENSION_PX
     ): Bitmap? = withContext(Dispatchers.IO) {
+        val effectiveMax = maxDimensionPx.coerceIn(256, SMART_MAX_DIMENSION_PX)
         try {
             val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -49,7 +61,7 @@ object NotebookImageHelper {
 
             var sampleSize = 1
             val longestSide = max(rawWidth, rawHeight)
-            while (longestSide / (sampleSize * 2) >= maxDimensionPx) {
+            while (longestSide / (sampleSize * 2) >= effectiveMax) {
                 sampleSize *= 2
             }
 
@@ -62,23 +74,26 @@ object NotebookImageHelper {
                 BitmapFactory.decodeStream(input, null, decodeOptions)
             } ?: return@withContext null
 
-            val maxCurrent = max(decoded.width, decoded.height)
-            if (maxCurrent > maxDimensionPx) {
-                val scale = maxDimensionPx.toFloat() / maxCurrent.toFloat()
-                val targetW = (decoded.width * scale).toInt().coerceAtLeast(1)
-                val targetH = (decoded.height * scale).toInt().coerceAtLeast(1)
-                val scaled = Bitmap.createScaledBitmap(decoded, targetW, targetH, true)
-                if (scaled !== decoded) decoded.recycle()
-                scaled
-            } else {
-                decoded
-            }
+            scaleBitmapIfNeeded(decoded, effectiveMax)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load scaled bitmap from uri=$uri", e)
             null
         }
     }
 
+    private fun scaleBitmapIfNeeded(source: Bitmap, maxDimensionPx: Int): Bitmap {
+        val maxCurrent = max(source.width, source.height)
+        if (maxCurrent <= maxDimensionPx) return source
+        val scale = maxDimensionPx.toFloat() / maxCurrent.toFloat()
+        val targetW = (source.width * scale).toInt().coerceAtLeast(1)
+        val targetH = (source.height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(source, targetW, targetH, true)
+    }
+
+    /**
+     * Smart-compresses a bitmap to max 1024px and ~80% JPEG quality (targeting ~150-200 KB)
+     * before writing to app-private chat_uploads storage.
+     */
     suspend fun persistThumbnail(context: Context, bitmap: Bitmap): String? =
         withContext(Dispatchers.IO) {
             try {
@@ -86,27 +101,40 @@ object NotebookImageHelper {
                     if (!exists()) mkdirs()
                 }
                 val outFile = File(uploadsDir, "note_${System.currentTimeMillis()}.jpg")
-                FileOutputStream(outFile).use { fos ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 82, fos)
-                    fos.flush()
+                val resized = scaleBitmapIfNeeded(bitmap, SMART_MAX_DIMENSION_PX)
+                try {
+                    writeSmartCompressedJpeg(resized, outFile)
+                } finally {
+                    if (resized !== bitmap && !resized.isRecycled) {
+                        resized.recycle()
+                    }
                 }
+                pruneStaleCameraCache(context)
                 outFile.absolutePath
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to persist notebook image thumbnail", e)
+                Log.e(TAG, "Failed to persist smart-compressed photo", e)
                 null
             }
         }
 
+    /**
+     * Persists AI-generated visual diagrams at max 1024px with sharp smart JPEG compression
+     * to keep storage lean while preserving fine textbook labels and lines.
+     */
     suspend fun persistVisualDiagram(context: Context, bitmap: Bitmap): String? =
         withContext(Dispatchers.IO) {
             try {
                 val diagramsDir = File(context.filesDir, "ai_diagrams").apply {
                     if (!exists()) mkdirs()
                 }
-                val outFile = File(diagramsDir, "diagram_${System.currentTimeMillis()}.png")
-                FileOutputStream(outFile).use { fos ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-                    fos.flush()
+                val outFile = File(diagramsDir, "diagram_${System.currentTimeMillis()}.jpg")
+                val resized = scaleBitmapIfNeeded(bitmap, SMART_MAX_DIMENSION_PX)
+                try {
+                    writeSmartCompressedJpeg(resized, outFile, initialQuality = 84)
+                } finally {
+                    if (resized !== bitmap && !resized.isRecycled) {
+                        resized.recycle()
+                    }
                 }
                 outFile.absolutePath
             } catch (e: Exception) {
@@ -114,6 +142,43 @@ object NotebookImageHelper {
                 null
             }
         }
+
+    private fun writeSmartCompressedJpeg(
+        bitmap: Bitmap,
+        outFile: File,
+        initialQuality: Int = SMART_JPEG_QUALITY_INITIAL
+    ) {
+        val baos = ByteArrayOutputStream()
+        var quality = initialQuality
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+
+        // Gently adapt quality if the image exceeds ~205 KB while keeping handwriting crisp
+        while (baos.size() > TARGET_MAX_FILE_BYTES && quality > SMART_JPEG_QUALITY_FLOOR) {
+            baos.reset()
+            quality = (quality - 6).coerceAtLeast(SMART_JPEG_QUALITY_FLOOR)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+        }
+
+        FileOutputStream(outFile).use { fos ->
+            fos.write(baos.toByteArray())
+            fos.flush()
+        }
+    }
+
+    private fun pruneStaleCameraCache(context: Context) {
+        try {
+            val cacheDir = File(context.cacheDir, "notebook_photos")
+            if (!cacheDir.exists()) return
+            val cutoff = System.currentTimeMillis() - 10 * 60 * 1000L // 10 minutes
+            cacheDir.listFiles()?.forEach { f ->
+                if (f.isFile && f.lastModified() < cutoff) {
+                    f.delete()
+                }
+            }
+        } catch (_: Exception) {
+            // Non-critical cache cleanup
+        }
+    }
 
     fun decodeFileThumbnail(path: String, maxSizePx: Int = 960): Bitmap? {
         return try {

@@ -72,12 +72,20 @@ class StudyRepository(
     suspend fun getSectionMessagesSnapshot(section: ChatSection): List<ChatMessageEntity> =
         chatMessageDao.getMessagesBySectionSnapshot(section.id)
 
+    suspend fun getAllChatMessagesSnapshot(): List<ChatMessageEntity> =
+        chatMessageDao.getAllMessagesSnapshot()
+
     suspend fun saveChatMessage(message: ChatMessageEntity): Long {
         return chatMessageDao.insertMessage(message)
     }
 
     suspend fun updateChatDiagramPath(messageId: Long, diagramPath: String?) {
         chatMessageDao.updateDiagramPath(messageId, diagramPath)
+    }
+
+    suspend fun clearMediaPathReferences(filePath: String) {
+        chatMessageDao.clearImagePathReference(filePath)
+        chatMessageDao.clearDiagramPathReference(filePath)
     }
 
     suspend fun clearSectionChat(section: ChatSection) {
@@ -259,5 +267,49 @@ class StudyRepository(
 
         masterUpgradeDao.clearRevisions()
         if (spacedRevisions.isNotEmpty()) masterUpgradeDao.insertRevisions(spacedRevisions)
+    }
+
+    suspend fun getBackupUserNotes(): List<MasterDataEntity> =
+        masterDataDao.getUserCreatedNotesSnapshot()
+
+    suspend fun getBackupBookmarkedBuiltInKeys(): List<Pair<String, String>> =
+        masterDataDao.getBookmarkedBuiltIn().map { it.subjectId to it.topicTitle }
+
+    suspend fun restoreCompleteEncryptedBackup(
+        chatMessages: List<ChatMessageEntity>,
+        userNotes: List<MasterDataEntity>,
+        bookmarkedBuiltInKeys: List<Pair<String, String>>,
+        examAttempts: List<ExamAttemptEntity>,
+        topperProgress: List<TopperSetProgressEntity>,
+        topperMistakes: List<TopperMistakeEntity>,
+        streak: StudyStreakEntity?,
+        dailyTasks: List<DailyPlanTaskEntity>,
+        brahmastramProgress: List<BrahmastramProgressEntity>,
+        spacedRevisions: List<SpacedRevisionEntity>
+    ) {
+        chatMessageDao.clearAll()
+        if (chatMessages.isNotEmpty()) {
+            chatMessageDao.insertMessages(chatMessages.map { it.copy(id = 0) })
+        }
+
+        masterDataDao.deleteAllUserCreatedNotes()
+        if (userNotes.isNotEmpty()) {
+            masterDataDao.insertAll(userNotes.map { it.copy(id = 0, isUserCreated = true) })
+        }
+
+        masterDataDao.clearBuiltInBookmarks()
+        bookmarkedBuiltInKeys.forEach { (subjectId, topicTitle) ->
+            masterDataDao.bookmarkBySubjectAndTitle(subjectId, topicTitle)
+        }
+
+        restoreFullProgressBackup(
+            examAttempts = examAttempts,
+            topperProgress = topperProgress,
+            topperMistakes = topperMistakes,
+            streak = streak,
+            dailyTasks = dailyTasks,
+            brahmastramProgress = brahmastramProgress,
+            spacedRevisions = spacedRevisions
+        )
     }
 }

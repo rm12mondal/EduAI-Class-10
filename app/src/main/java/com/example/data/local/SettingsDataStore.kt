@@ -15,7 +15,9 @@ import com.example.model.LlamaInferenceConfig
 import com.example.model.SyllabusPlanOption
 import com.example.model.TtsVoiceSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.security.SecureRandom
 
 private val Context.eduAiDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "eduai_class10_prefs"
@@ -28,7 +30,8 @@ data class StoredAppSettings(
     val ttsSettings: TtsVoiceSettings = TtsVoiceSettings(),
     val fastLearningExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
     val fastLearningPlanMonths: Float = SyllabusPlanOption.MONTHS_3.months,
-    val fastLearningCompletedChapters: Set<String> = emptySet()
+    val fastLearningCompletedChapters: Set<String> = emptySet(),
+    val secretRecoveryKey: String = ""
 )
 
 class SettingsDataStore(private val context: Context) {
@@ -49,6 +52,7 @@ class SettingsDataStore(private val context: Context) {
         val FAST_LEARNING_EXAM_YEAR = intPreferencesKey("fast_learning_exam_year")
         val FAST_LEARNING_PLAN_MONTHS = floatPreferencesKey("fast_learning_plan_months")
         val FAST_LEARNING_COMPLETED_CHAPTERS = stringSetPreferencesKey("fast_learning_completed_chapters")
+        val SECRET_RECOVERY_KEY = stringPreferencesKey("secret_recovery_key")
     }
 
     val settingsFlow: Flow<StoredAppSettings> = context.eduAiDataStore.data.map { prefs ->
@@ -72,7 +76,8 @@ class SettingsDataStore(private val context: Context) {
             fastLearningPlanMonths = prefs[Keys.FAST_LEARNING_PLAN_MONTHS]
                 ?: SyllabusPlanOption.MONTHS_3.months,
             fastLearningCompletedChapters = prefs[Keys.FAST_LEARNING_COMPLETED_CHAPTERS]
-                ?: emptySet()
+                ?: emptySet(),
+            secretRecoveryKey = prefs[Keys.SECRET_RECOVERY_KEY] ?: ""
         )
     }
 
@@ -138,6 +143,54 @@ class SettingsDataStore(private val context: Context) {
             } else {
                 current + chapterKey
             }
+        }
+    }
+
+    suspend fun restoreFastLearningProgress(
+        examYear: Int,
+        planMonths: Float,
+        completedChapters: Set<String>
+    ) {
+        context.eduAiDataStore.edit { prefs ->
+            prefs[Keys.FAST_LEARNING_EXAM_YEAR] = examYear
+            prefs[Keys.FAST_LEARNING_PLAN_MONTHS] = planMonths
+            prefs[Keys.FAST_LEARNING_COMPLETED_CHAPTERS] = completedChapters
+        }
+    }
+
+    suspend fun getOrCreateSecretRecoveryKey(): String {
+        val existing = settingsFlow.first().secretRecoveryKey
+        if (existing.isNotBlank()) return existing
+        val generated = generateReadableRecoveryKey()
+        context.eduAiDataStore.edit { prefs ->
+            val current = prefs[Keys.SECRET_RECOVERY_KEY]
+            if (current.isNullOrBlank()) {
+                prefs[Keys.SECRET_RECOVERY_KEY] = generated
+            }
+        }
+        return settingsFlow.first().secretRecoveryKey.ifBlank { generated }
+    }
+
+    suspend fun saveSecretRecoveryKey(key: String) {
+        val cleaned = key.trim().uppercase()
+        if (cleaned.isNotBlank()) {
+            context.eduAiDataStore.edit { prefs ->
+                prefs[Keys.SECRET_RECOVERY_KEY] = cleaned
+            }
+        }
+    }
+
+    companion object {
+        private const val KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+        fun generateReadableRecoveryKey(): String {
+            val rng = SecureRandom()
+            fun block(len: Int): String = buildString(len) {
+                repeat(len) {
+                    append(KEY_ALPHABET[rng.nextInt(KEY_ALPHABET.length)])
+                }
+            }
+            return "EDU10-${block(4)}-${block(4)}"
         }
     }
 }

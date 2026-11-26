@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeveloperBoard
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Science
@@ -98,6 +99,8 @@ fun ModelManagerScreen(
     onExportBackupUri: (android.net.Uri) -> Unit = {},
     onImportBackupUri: (android.net.Uri) -> Unit = {},
     onDismissBackupStatus: () -> Unit = {},
+    secretRecoveryKey: String = "",
+    onOpenRecoveryKeyBackup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Zero-permission Android Storage Access Framework (SAF) file picker
@@ -545,7 +548,104 @@ fun ModelManagerScreen(
                 }
             }
 
-            // 6. Offline Study Progress Backup & Restore (EduAI_Backup.json via SAF)
+            // 6. Secret Recovery Key & Dual Encrypted Backup (.edukey — Local Storage + Google Drive)
+            item(key = "secret_recovery_key_backup_card") {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.5.dp, Color(0xFF0F766E).copy(alpha = 0.45f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFF0F766E).copy(alpha = 0.14f),
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Key,
+                                        contentDescription = null,
+                                        tint = Color(0xFF0F766E),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🔑 রিকভারি কী ও ব্যাকআপ (.edukey)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "সব চ্যাট, রিপোর্ট কার্ড, স্কোর ও নোট AES-256 এনক্রিপ্টেড ফোনে ও Google Drive-এ সেভ করুন",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (secretRecoveryKey.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xFF064E3B).copy(alpha = 0.10f),
+                                border = BorderStroke(1.dp, Color(0xFF0F766E).copy(alpha = 0.30f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "তোমার চাবি:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = secretRecoveryKey,
+                                        style = MaterialTheme.typography.titleSmall.copy(fontFamily = MonoFontFamily),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF0F766E)
+                                    )
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = onOpenRecoveryKeyBackup,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0F766E),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .minimumInteractiveComponentSize()
+                                .testTag("settings_open_recovery_key_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Key,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "🔑 রিকভারি কী, Google Drive ব্যাকআপ ও রিস্টোর খুলুন",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 7. Offline Study Progress Backup & Restore (EduAI_Backup.json via SAF)
             item(key = "progress_backup_restore_card") {
                 Card(
                     shape = RoundedCornerShape(20.dp),

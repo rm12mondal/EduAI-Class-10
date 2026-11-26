@@ -50,10 +50,12 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PermMedia
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
@@ -131,6 +133,8 @@ fun FloatingDActionHub(
     onOpenFullPodcastPlayer: () -> Unit,
     onShortcutFastLearning: () -> Unit,
     onShortcutStepByStepMemory: () -> Unit,
+    onShortcutMediaVault: () -> Unit,
+    onShortcutRecoveryBackup: () -> Unit,
     onShortcutSmartLearning: () -> Unit,
     onShortcutBrahmastram: () -> Unit,
     onShortcutGrammarLab: () -> Unit,
@@ -298,6 +302,14 @@ fun FloatingDActionHub(
                         onShortcutStepByStepMemory = {
                             isMenuOpen = false
                             onShortcutStepByStepMemory()
+                        },
+                        onShortcutMediaVault = {
+                            isMenuOpen = false
+                            onShortcutMediaVault()
+                        },
+                        onShortcutRecoveryBackup = {
+                            isMenuOpen = false
+                            onShortcutRecoveryBackup()
                         },
                         onShortcutSmartLearning = {
                             isMenuOpen = false
@@ -477,6 +489,8 @@ private fun DHubPopupMenuCard(
     onOpenFullPodcastPlayer: () -> Unit,
     onShortcutFastLearning: () -> Unit,
     onShortcutStepByStepMemory: () -> Unit,
+    onShortcutMediaVault: () -> Unit,
+    onShortcutRecoveryBackup: () -> Unit,
     onShortcutSmartLearning: () -> Unit,
     onShortcutBrahmastram: () -> Unit,
     onShortcutGrammarLab: () -> Unit,
@@ -960,6 +974,24 @@ private fun DHubPopupMenuCard(
                     subtitle = "Step-by-Step অঙ্ক (A/B) ও ছড়া-গল্পে মেমোরি ট্রিক",
                     tag = "d_hub_shortcut_step_by_step_memory",
                     onClick = onShortcutStepByStepMemory
+                )
+
+                DHubShortcutRow(
+                    icon = Icons.Rounded.PermMedia,
+                    tint = Color(0xFF0F766E),
+                    title = "📚 সাবজেক্ট অনুযায়ী ছবি ও PDF",
+                    subtitle = "সব চ্যাটের ছবি, ডায়াগ্রাম ও PDF ভল্ট ও স্টোরেজ ক্লিনার",
+                    tag = "d_hub_shortcut_media_vault",
+                    onClick = onShortcutMediaVault
+                )
+
+                DHubShortcutRow(
+                    icon = Icons.Rounded.Key,
+                    tint = Color(0xFF065F46),
+                    title = "🔑 রিকভারি কী ও ব্যাকআপ",
+                    subtitle = "Secret Key দিয়ে ফোন ও Google Drive-এ .edukey ব্যাকআপ",
+                    tag = "d_hub_shortcut_recovery_backup",
+                    onClick = onShortcutRecoveryBackup
                 )
 
                 DHubShortcutRow(
