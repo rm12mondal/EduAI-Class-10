@@ -68,6 +68,9 @@ interface ChatMessageDao {
     @Query("SELECT * FROM chat_messages WHERE sectionId = :sectionId ORDER BY timestamp ASC, id ASC")
     suspend fun getMessagesBySectionSnapshot(sectionId: String): List<ChatMessageEntity>
 
+    @Query("SELECT * FROM chat_messages WHERE sectionId LIKE 'date_study_%' ORDER BY timestamp DESC, id DESC")
+    fun observeDateStudyMessages(): Flow<List<ChatMessageEntity>>
+
     @Query("SELECT * FROM chat_messages ORDER BY timestamp ASC, id ASC")
     suspend fun getAllMessagesSnapshot(): List<ChatMessageEntity>
 

@@ -65,10 +65,23 @@ enum class ChatSection(
         titleBn = "ধাপে ধাপে শিখি ও মনে রাখার টেকনিক",
         subtitleBn = "স্টেপ-বাই-স্টেপ টিউটর ও ছড়া-গল্পে মেমোরি ট্রিক",
         placeholderBn = "অঙ্ক, সংজ্ঞা, তারিখ বা ব্যাকরণের প্রশ্ন লেখো…"
+    ),
+    DATE_STUDY(
+        id = "date_study",
+        titleBn = "তারিখভিত্তিক স্টাডি হাব",
+        subtitleBn = "অল-ইন-ওয়ান স্টাডি ও তারিখভিত্তিক হিস্ট্রি",
+        placeholderBn = "প্রশ্ন লেখো, মাইকে বলো বা খাতার ছবি দাও…"
     );
 
     companion object {
-        fun fromId(id: String?): ChatSection = entries.firstOrNull { it.id == id } ?: MAIN_CHAT
+        const val DATE_STUDY_PREFIX: String = "date_study_"
+
+        fun dateStudySectionId(dateIso: String): String = "$DATE_STUDY_PREFIX$dateIso"
+
+        fun fromId(id: String?): ChatSection {
+            if (id != null && id.startsWith(DATE_STUDY_PREFIX)) return DATE_STUDY
+            return entries.firstOrNull { it.id == id } ?: MAIN_CHAT
+        }
     }
 }
 

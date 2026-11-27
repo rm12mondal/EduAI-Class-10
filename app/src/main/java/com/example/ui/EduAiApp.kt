@@ -29,19 +29,32 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.R
+import com.example.data.branding.AppBrandingManager
+import com.example.data.security.BiometricUnlockHelper
+import com.example.model.AppBrandingUiState
+import com.example.model.AppLockUiState
 import com.example.model.AppTab
 import com.example.model.ChatSection
 import com.example.model.DailyPlannerUiState
@@ -49,6 +62,9 @@ import com.example.model.PocketBookCategory
 import com.example.model.SpacedRevisionUiState
 import com.example.model.WbbseSubject
 import com.example.ui.backup.RecoveryKeyBackupScreen
+import com.example.ui.branding.BrandedSplashOverlay
+import com.example.ui.branding.LocalAppBranding
+import com.example.ui.branding.ResolvedAppBranding
 import com.example.ui.chat.ChatScreen
 import com.example.ui.exam.ExamScreen
 import com.example.ui.extras.AudioRevisionPlayerModal
@@ -57,6 +73,8 @@ import com.example.ui.extras.InteractiveMapBoardScreen
 import com.example.ui.extras.RapidFireScreen
 import com.example.ui.hub.FloatingDActionHub
 import com.example.ui.hub.VisualMindMapModal
+import com.example.ui.learning.DateStudyHubScreen
+import com.example.ui.learning.DateStudySelectionDialog
 import com.example.ui.learning.FastLearningScreen
 import com.example.ui.learning.SmartLearningScreen
 import com.example.ui.learning.StepByStepMemoryScreen
@@ -71,12 +89,14 @@ import com.example.ui.master.PocketBookScreen
 import com.example.ui.master.SavedPdfLibraryScreen
 import com.example.ui.master.WritingStudioScreen
 import com.example.ui.model.ModelManagerScreen
+import com.example.ui.security.AppLockScreen
 import com.example.ui.subjects.SubjectsScreen
 import com.example.ui.topper.TopperScreen
 import com.example.ui.vault.SubjectMediaVaultScreen
 import com.example.viewmodel.EduAiUiState
 import com.example.viewmodel.EduAiViewModel
 import com.example.viewmodel.TopperUiState
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class NavDestination(
@@ -160,10 +180,71 @@ fun EduAiApp(
     val stepByStepMemoryChatState by viewModel.stepByStepMemoryChatState.collectAsStateWithLifecycle()
     val mediaVaultState by viewModel.mediaVaultState.collectAsStateWithLifecycle()
     val recoveryState by viewModel.recoveryState.collectAsStateWithLifecycle()
+    val brandingState by viewModel.brandingState.collectAsStateWithLifecycle()
+    val appLockState by viewModel.appLockState.collectAsStateWithLifecycle()
+    val dateStudyState by viewModel.dateStudyState.collectAsStateWithLifecycle()
+    val dateStudyChatState by viewModel.dateStudyChatState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    val hasFullScreenOverlay = mediaVaultState.isOpen ||
+    // Decode custom gallery logo once whenever path/version updates
+    val customLogoBitmap = remember(brandingState.customLogoPath, brandingState.logoVersion) {
+        AppBrandingManager.decodeCustomLogoBitmap(brandingState.customLogoPath)?.asImageBitmap()
+    }
+    val resolvedBranding = remember(
+        brandingState.effectiveAppTitle,
+        brandingState.hasCustomTitle,
+        customLogoBitmap,
+        brandingState.activeDisguisePreset
+    ) {
+        ResolvedAppBranding(
+            effectiveTitle = brandingState.effectiveAppTitle,
+            hasCustomTitle = brandingState.hasCustomTitle,
+            customLogoBitmap = customLogoBitmap,
+            activePreset = brandingState.activeDisguisePreset
+        )
+    }
+
+    // Sync Android Recent Apps task switcher title & icon dynamically
+    LaunchedEffect(
+        brandingState.effectiveAppTitle,
+        brandingState.customLogoPath,
+        brandingState.logoVersion,
+        brandingState.activeDisguisePreset
+    ) {
+        val activity = BiometricUnlockHelper.findFragmentActivity(context)
+        if (activity != null) {
+            AppBrandingManager.applyTaskDescription(
+                activity = activity,
+                effectiveTitle = brandingState.effectiveAppTitle,
+                customLogoPath = brandingState.customLogoPath,
+                preset = brandingState.activeDisguisePreset
+            )
+        }
+    }
+
+    // Enforce App Lock every time the Activity starts / resumes from background (ON_START)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                viewModel.onActivityStarted()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Brief Branded Launch Splash showing custom logo & custom title on cold start
+    var showLaunchSplash by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        delay(650L)
+        showLaunchSplash = false
+    }
+
+    val hasFullScreenOverlay = dateStudyState.isWorkspaceOpen ||
+        mediaVaultState.isOpen ||
         recoveryState.isOpen ||
         stepByStepMemoryState.isOpen ||
         fastLearningState.isOpen ||
@@ -213,6 +294,7 @@ fun EduAiApp(
         }
     }
 
+    CompositionLocalProvider(LocalAppBranding provides resolvedBranding) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useNavRail = maxWidth >= 600.dp
 
@@ -250,6 +332,37 @@ fun EduAiApp(
             }
         ) { innerPadding ->
             when {
+                dateStudyState.isWorkspaceOpen -> {
+                    DateStudyHubScreen(
+                        state = dateStudyState,
+                        chatState = dateStudyChatState,
+                        inferenceMode = uiState.inferenceMode,
+                        speakingMessageId = uiState.ttsState.speakingMessageId,
+                        voiceInjectedText = voiceInjectedText,
+                        onToggleInferenceMode = viewModel::toggleInferenceMode,
+                        onOpenChangeDate = viewModel::openDateStudyChangeDate,
+                        onSetHistoryVisible = viewModel::setDateStudyHistoryVisible,
+                        onJumpToHistoryDate = viewModel::jumpToDateStudyHistory,
+                        onSelectMode = viewModel::selectDateStudyMode,
+                        onSelectSubject = viewModel::selectDateStudySubject,
+                        onTriggerOneTapModeAction = viewModel::triggerDateStudyModeAction,
+                        onSendMessage = viewModel::sendDateStudyMessage,
+                        onAttachPhoto = viewModel::attachDateStudyPhoto,
+                        onClearPendingPhoto = viewModel::clearDateStudyPendingPhoto,
+                        onClearChat = viewModel::clearDateStudyChat,
+                        onToggleSpeak = viewModel::toggleSpeakMessage,
+                        onDismissError = viewModel::dismissDateStudyError,
+                        onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
+                        onOpenMindMapFromReply = viewModel::openMindMapFromText,
+                        onPrepareSystemPicker = viewModel::suppressNextStartLockForSystemPicker,
+                        onShowSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
+                        onClose = viewModel::closeDateStudyWorkspace,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                    )
+                }
+
                 mediaVaultState.isOpen -> {
                     SubjectMediaVaultScreen(
                         state = mediaVaultState,
@@ -649,6 +762,8 @@ fun EduAiApp(
                                 savedPdfCount = pdfState.items.size,
                                 backupStatusMessage = backupStatusMessage,
                                 secretRecoveryKey = recoveryState.secretRecoveryKey,
+                                brandingState = brandingState,
+                                appLockState = appLockState,
                                 voiceInjectedText = voiceInjectedText,
                                 viewModel = viewModel,
                                 onShowSnackbar = { msg ->
@@ -692,7 +807,8 @@ fun EduAiApp(
                 uiState.examChat.messages.any { it.role != "user" } ||
                 fastLearningChatState.messages.any { it.role != "user" } ||
                 brahmastramChatState.messages.any { it.role != "user" } ||
-                stepByStepMemoryChatState.messages.any { it.role != "user" },
+                stepByStepMemoryChatState.messages.any { it.role != "user" } ||
+                dateStudyChatState.messages.any { it.role != "user" },
             onSelectVoiceLanguage = viewModel::setVoiceInputLanguage,
             onToggleVoiceListening = viewModel::toggleVoiceListening,
             onToggleExactTextbookMode = viewModel::toggleExactTextbookMode,
@@ -701,6 +817,7 @@ fun EduAiApp(
             onStopPodcast = viewModel::stopQuickPodcast,
             onSetPodcastSpeed = viewModel::setQuickPodcastSpeed,
             onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
+            onShortcutDateStudyStart = viewModel::shortcutOpenDateStudyStart,
             onShortcutFastLearning = viewModel::shortcutOpenFastLearning,
             onShortcutStepByStepMemory = viewModel::shortcutOpenStepByStepMemory,
             onShortcutMediaVault = viewModel::shortcutOpenMediaVault,
@@ -741,6 +858,35 @@ fun EduAiApp(
                 onDismiss = viewModel::closeMindMap
             )
         }
+
+        // Mandatory Madhyamik Exam Date Selection Dialog for "▶️ Start (তারিখ দিয়ে পড়া শুরু করুন)"
+        if (dateStudyState.isDatePickerDialogOpen) {
+            DateStudySelectionDialog(
+                initialExamDateEpochMs = dateStudyState.examDateEpochMs,
+                isChangingDate = dateStudyState.isWorkspaceOpen,
+                onDismiss = viewModel::dismissDateStudyPicker,
+                onConfirmStart = viewModel::confirmDateStudyAndStart
+            )
+        }
+
+        // Branded Launch Splash Overlay (shows Custom Logo + Custom App Title)
+        BrandedSplashOverlay(
+            visible = showLaunchSplash && !appLockState.isLocked,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Strict Full-Screen App Lock Overlay (4-Digit PIN + Fingerprint/Face Biometric)
+        if (appLockState.isLocked) {
+            AppLockScreen(
+                state = appLockState,
+                onSubmitPin = viewModel::submitUnlockPin,
+                onBiometricSuccess = viewModel::onBiometricUnlockSuccess,
+                onBiometricError = viewModel::onBiometricError,
+                onClearError = viewModel::clearLockError,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
     }
 }
 
@@ -761,6 +907,8 @@ private fun ActiveScreenHost(
     savedPdfCount: Int,
     backupStatusMessage: String?,
     secretRecoveryKey: String,
+    brandingState: AppBrandingUiState,
+    appLockState: AppLockUiState,
     voiceInjectedText: String?,
     viewModel: EduAiViewModel,
     onShowSnackbar: (String) -> Unit
@@ -910,7 +1058,22 @@ private fun ActiveScreenHost(
             onImportBackupUri = viewModel::importProgressBackup,
             onDismissBackupStatus = viewModel::clearBackupStatus,
             secretRecoveryKey = secretRecoveryKey,
-            onOpenRecoveryKeyBackup = { viewModel.openRecoveryBackup(0) }
+            onOpenRecoveryKeyBackup = { viewModel.openRecoveryBackup(0) },
+            brandingState = brandingState,
+            appLockState = appLockState,
+            onSelectLauncherDisguise = viewModel::selectLauncherDisguise,
+            onPrepareSystemPicker = viewModel::suppressNextStartLockForSystemPicker,
+            onPickCustomLogoUri = viewModel::setCustomGalleryLogo,
+            onResetCustomLogo = viewModel::resetCustomGalleryLogo,
+            onSaveCustomAppTitle = viewModel::setCustomAppTitle,
+            onResetCustomAppTitle = viewModel::resetCustomAppTitle,
+            onDismissBrandingStatus = viewModel::clearBrandingStatus,
+            onEnableOrUpdateAppLockPin = viewModel::enableOrUpdateAppLockPin,
+            onEnableExistingAppLock = viewModel::enableExistingAppLock,
+            onDisableAppLockWithPinVerify = viewModel::disableAppLockWithPinVerification,
+            onToggleBiometricUnlock = viewModel::setBiometricUnlockEnabled,
+            onTestLockNow = viewModel::lockAppNowForTesting,
+            onDismissAppLockStatus = viewModel::clearLockStatus
         )
     }
 }

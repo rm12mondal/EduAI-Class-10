@@ -98,6 +98,7 @@ import com.example.model.ExamChatIntent
 import com.example.model.ExamChatMessage
 import com.example.model.ExamSessionMode
 import com.example.model.InferenceMode
+import com.example.ui.branding.BrandedAiAssistantAvatar
 import com.example.ui.chat.DiagramGeneratingBanner
 import com.example.ui.chat.FullScreenDiagramDialog
 import com.example.ui.chat.GeneratedDiagramCard
@@ -803,19 +804,31 @@ private fun ExamChatMessageBubble(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        color = (if (isUser) MaterialTheme.colorScheme.primary else OnlineCobalt).copy(alpha = 0.14f),
-                        shape = RoundedCornerShape(8.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text(
-                            text = if (isUser) message.intent.badgeBn else message.sourceLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isUser) MaterialTheme.colorScheme.primary else OnlineCobalt,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        if (!isUser) {
+                            BrandedAiAssistantAvatar(
+                                size = 22.dp,
+                                defaultTint = OnlineCobalt
+                            )
+                        }
+                        Surface(
+                            color = (if (isUser) MaterialTheme.colorScheme.primary else OnlineCobalt).copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = if (isUser) message.intent.badgeBn else message.sourceLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isUser) MaterialTheme.colorScheme.primary else OnlineCobalt,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                     message.subject?.let { subj ->
                         Text(

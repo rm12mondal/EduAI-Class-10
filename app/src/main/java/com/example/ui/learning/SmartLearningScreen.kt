@@ -103,6 +103,7 @@ import com.example.model.InferenceMode
 import com.example.model.SmartLearningMessage
 import com.example.model.SmartLearningUiState
 import com.example.model.WbbseSubject
+import com.example.ui.branding.BrandedAiAssistantAvatar
 import com.example.ui.chat.DiagramGeneratingBanner
 import com.example.ui.chat.FullScreenDiagramDialog
 import com.example.ui.chat.GeneratedDiagramCard
@@ -949,19 +950,31 @@ private fun SmartLearningMessageCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        color = accent.copy(alpha = 0.14f),
-                        shape = RoundedCornerShape(8.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text(
-                            text = message.sourceLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = accent,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
+                        if (!isUser) {
+                            BrandedAiAssistantAvatar(
+                                size = 22.dp,
+                                defaultTint = accent
+                            )
+                        }
+                        Surface(
+                            color = accent.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = message.sourceLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = accent,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                     message.chapterName?.let { ch ->
                         Text(

@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -90,6 +91,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -102,6 +104,8 @@ import androidx.core.content.ContextCompat
 import com.example.data.speech.PodcastUiState
 import com.example.data.speech.SpeechRecognitionUiState
 import com.example.data.speech.VoiceInputLanguage
+import com.example.ui.branding.BrandedAppLogoAvatar
+import com.example.ui.branding.LocalAppBranding
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
@@ -131,6 +135,7 @@ fun FloatingDActionHub(
     onStopPodcast: () -> Unit,
     onSetPodcastSpeed: (Float) -> Unit,
     onOpenFullPodcastPlayer: () -> Unit,
+    onShortcutDateStudyStart: () -> Unit,
     onShortcutFastLearning: () -> Unit,
     onShortcutStepByStepMemory: () -> Unit,
     onShortcutMediaVault: () -> Unit,
@@ -295,6 +300,10 @@ fun FloatingDActionHub(
                             isMenuOpen = false
                             onOpenFullPodcastPlayer()
                         },
+                        onShortcutDateStudyStart = {
+                            isMenuOpen = false
+                            onShortcutDateStudyStart()
+                        },
                         onShortcutFastLearning = {
                             isMenuOpen = false
                             onShortcutFastLearning()
@@ -417,7 +426,8 @@ fun FloatingDActionHub(
                 .testTag("floating_d_hub_button"),
             contentAlignment = Alignment.Center
         ) {
-            // Sleek inner glass ring (AssistiveTouch aesthetic)
+            // Sleek inner glass ring (AssistiveTouch aesthetic) — shows Custom Gallery Logo when set
+            val dBranding = LocalAppBranding.current
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -425,29 +435,41 @@ fun FloatingDActionHub(
                     .background(Color.White.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.28f),
-                                    activeRingColor.copy(alpha = 0.85f)
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "D",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 21.sp,
-                            letterSpacing = 0.5.sp
-                        ),
-                        color = Color.White
+                val customLogoBmp = dBranding.customLogoBitmap
+                if (customLogoBmp != null) {
+                    Image(
+                        bitmap = customLogoBmp,
+                        contentDescription = dBranding.effectiveTitle,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0.28f),
+                                        activeRingColor.copy(alpha = 0.85f)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "D",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 21.sp,
+                                letterSpacing = 0.5.sp
+                            ),
+                            color = Color.White
+                        )
+                    }
                 }
             }
 
@@ -487,6 +509,7 @@ private fun DHubPopupMenuCard(
     onStopPodcast: () -> Unit,
     onSetPodcastSpeed: (Float) -> Unit,
     onOpenFullPodcastPlayer: () -> Unit,
+    onShortcutDateStudyStart: () -> Unit,
     onShortcutFastLearning: () -> Unit,
     onShortcutStepByStepMemory: () -> Unit,
     onShortcutMediaVault: () -> Unit,
@@ -531,29 +554,40 @@ private fun DHubPopupMenuCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val hubBranding = LocalAppBranding.current
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(OnlineCobalt),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "D",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
+                    if (hubBranding.customLogoBitmap != null || hubBranding.isRebrandedOrDisguised) {
+                        BrandedAppLogoAvatar(
+                            size = 34.dp,
+                            shape = CircleShape
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(OnlineCobalt),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "D",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                        }
                     }
                     Column {
                         Text(
-                            text = "EduAI কুইক অ্যাকশন হাব",
+                            text = "${if (hubBranding.isRebrandedOrDisguised) hubBranding.effectiveTitle else "EduAI"} কুইক অ্যাকশন হাব",
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "স্মার্ট টুলস ও ১-ট্যাপ শর্টকাট",
@@ -584,6 +618,82 @@ private fun DHubPopupMenuCard(
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // TOP PRIMARY ENTRY: ▶️ Start (তারিখ দিয়ে পড়া শুরু করুন)
+                Surface(
+                    onClick = onShortcutDateStudyStart,
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color.Transparent,
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(1.2.dp, Color(0xFF93C5FD).copy(alpha = 0.65f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .testTag("d_hub_start_date_study_btn")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color(0xFF0F172A),
+                                        Color(0xFF1D4ED8),
+                                        Color(0xFF0F766E)
+                                    )
+                                )
+                            )
+                            .padding(horizontal = 13.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.20f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Start Date Study",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "▶️ Start (তারিখ দিয়ে পড়া শুরু করুন)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "এক স্ক্রিনেই স্মার্ট, ফাস্ট, ২/৩ মাস, ব্রহ্মাস্ত্র ও পরীক্ষা",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.90f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFDE68A)
+                        ) {
+                            Text(
+                                text = "শুরু",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF0F172A),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                 // SECTION 1: NEW SMART STUDY TOOLS
                 Text(
                     text = "স্মার্ট স্টাডি টুলস",

@@ -33,6 +33,8 @@ import com.example.data.speech.VoiceInputLanguage
 import com.example.ui.hub.MindMapParser
 import com.example.ui.hub.MindMapTree
 import com.example.model.ActiveExamSession
+import com.example.model.AppBrandingUiState
+import com.example.model.AppLockUiState
 import com.example.model.AppTab
 import com.example.model.AudioRevisionUiState
 import com.example.model.ChatPromptOptions
@@ -42,6 +44,7 @@ import com.example.model.ExamChatMessage
 import com.example.model.ExamFormat
 import com.example.model.ExamSessionMode
 import com.example.model.InferenceMode
+import com.example.model.LauncherDisguisePreset
 import com.example.model.LlamaInferenceConfig
 import com.example.model.MapBoardDomain
 import com.example.model.MapBoardUiState
@@ -62,6 +65,8 @@ import com.example.model.AiVivaUiState
 import com.example.model.BrahmastramUiState
 import com.example.model.ChatSection
 import com.example.model.ConfusionCleanerUiState
+import com.example.model.DateStudyHubUiState
+import com.example.model.DateStudyMode
 import com.example.model.DiagramLabUiState
 import com.example.model.FastLearningChapterItem
 import com.example.model.FastLearningContextHelper
@@ -247,7 +252,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         context = application,
         onFinalTranscript = { spoken ->
             _voiceInjectedText.value = spoken
-            val inActiveChatContext = stepByStepMemoryState.value.isOpen ||
+            val inActiveChatContext = dateStudyState.value.isWorkspaceOpen ||
+                stepByStepMemoryState.value.isOpen ||
                 fastLearningState.value.isOpen ||
                 brahmastramState.value.isOpen ||
                 mindMapTree.value != null ||
@@ -283,6 +289,20 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     val mindMapChatState: StateFlow<SectionChatUiState> = sectionChatController.mindMapChatState
     val fastLearningChatState: StateFlow<SectionChatUiState> = sectionChatController.fastLearningChatState
     val stepByStepMemoryChatState: StateFlow<SectionChatUiState> = sectionChatController.stepByStepMemoryChatState
+
+    private val dateStudyHubController = DateStudyHubController(
+        appContext = appContext,
+        scope = viewModelScope,
+        studyRepository = studyRepository,
+        aiRepository = aiRepository,
+        getInferenceMode = { uiState.value.inferenceMode },
+        getLlamaConfig = { uiState.value.llamaConfig },
+        getExactTextbookMode = { uiState.value.exactTextbookMode },
+        getTargetExamYear = { fastLearningState.value.targetExamYear }
+    )
+
+    val dateStudyState: StateFlow<DateStudyHubUiState> = dateStudyHubController.hubState
+    val dateStudyChatState: StateFlow<SectionChatUiState> = dateStudyHubController.chatState
 
     private val topperController = TopperController(
         appContext = appContext,
@@ -361,6 +381,15 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
     val mediaVaultState: StateFlow<SubjectMediaVaultUiState> = storageAndRecoveryController.mediaVaultState
     val recoveryState: StateFlow<RecoveryKeyBackupUiState> = storageAndRecoveryController.recoveryState
+
+    private val brandingAndLockController = BrandingAndLockController(
+        appContext = appContext,
+        scope = viewModelScope,
+        settingsDataStore = settingsDataStore
+    )
+
+    val brandingState: StateFlow<AppBrandingUiState> = brandingAndLockController.brandingState
+    val appLockState: StateFlow<AppLockUiState> = brandingAndLockController.appLockState
 
     private val localState = MutableStateFlow(LocalUiNavigationState())
     private var generationJob: Job? = null
@@ -475,6 +504,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         examHallTimerJob?.cancel()
         sectionChatController.stopAll()
+        dateStudyHubController.stopAll()
         topperController.stopTimer()
         smartLearningController.stopAll()
         topperExtrasController.stopAll()
@@ -1798,6 +1828,14 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
      * Exam Chat, Main Chat, or verified WBBSE notes.
      */
     private fun resolveLatestContentBundle(): Triple<String, String, String> {
+        val dsMsg = dateStudyChatState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
+        if (dateStudyState.value.isWorkspaceOpen && dsMsg != null) {
+            val subjLabel = WbbseSubject.fromId(dsMsg.subjectId)?.bengaliName
+                ?: dateStudyState.value.selectedSubject?.bengaliName
+                ?: "তারিখভিত্তিক স্টাডি হাব"
+            return Triple(dsMsg.topicLabel.ifBlank { "$subjLabel (${dateStudyState.value.selectedDateIso})" }, subjLabel, dsMsg.content)
+        }
+
         val sbsMsg = stepByStepMemoryChatState.value.messages.lastOrNull { it.role != "user" && it.content.isNotBlank() }
         if (stepByStepMemoryState.value.isOpen && sbsMsg != null) {
             val subjLabel = WbbseSubject.fromId(sbsMsg.subjectId)?.bengaliName
@@ -1962,6 +2000,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeAllOverlaysForShortcut() {
+        dateStudyHubController.closeWorkspace()
         storageAndRecoveryController.closeMediaVault()
         storageAndRecoveryController.closeRecoveryBackup()
         closeStepByStepMemory()
@@ -2237,6 +2276,146 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     fun shortcutOpenRecoveryBackup() {
         closeAllOverlaysForShortcut()
         openRecoveryBackup(initialTabIndex = 0)
+    }
+
+    // ==================== App Rebranding, Launcher Disguise & App Lock ====================
+
+    fun selectLauncherDisguise(preset: LauncherDisguisePreset) {
+        brandingAndLockController.selectLauncherDisguise(preset)
+    }
+
+    fun setCustomGalleryLogo(uri: Uri) {
+        brandingAndLockController.setCustomGalleryLogo(uri)
+    }
+
+    fun resetCustomGalleryLogo() {
+        brandingAndLockController.resetCustomGalleryLogo()
+    }
+
+    fun setCustomAppTitle(rawTitle: String) {
+        brandingAndLockController.setCustomAppTitle(rawTitle)
+    }
+
+    fun resetCustomAppTitle() {
+        brandingAndLockController.resetCustomAppTitle()
+    }
+
+    fun clearBrandingStatus() {
+        brandingAndLockController.clearBrandingStatus()
+    }
+
+    fun enableOrUpdateAppLockPin(pin: String, enableBiometric: Boolean) {
+        brandingAndLockController.enableOrUpdatePin(pin, enableBiometric)
+    }
+
+    fun enableExistingAppLock() {
+        brandingAndLockController.enableExistingPinLock()
+    }
+
+    fun disableAppLockWithPinVerification(currentPin: String): Boolean {
+        return brandingAndLockController.disableAppLockWithPinVerification(currentPin)
+    }
+
+    fun setBiometricUnlockEnabled(enabled: Boolean) {
+        brandingAndLockController.setBiometricUnlockEnabled(enabled)
+    }
+
+    fun submitUnlockPin(candidatePin: String): Boolean {
+        return brandingAndLockController.submitUnlockPin(candidatePin)
+    }
+
+    fun onBiometricUnlockSuccess() {
+        brandingAndLockController.onBiometricUnlockSuccess()
+    }
+
+    fun onBiometricError(message: String) {
+        brandingAndLockController.onBiometricError(message)
+    }
+
+    fun clearLockError() {
+        brandingAndLockController.clearLockError()
+    }
+
+    fun clearLockStatus() {
+        brandingAndLockController.clearLockStatus()
+    }
+
+    fun onActivityStarted() {
+        brandingAndLockController.onActivityStarted()
+    }
+
+    fun suppressNextStartLockForSystemPicker() {
+        brandingAndLockController.suppressNextStartLockForSystemPicker()
+    }
+
+    fun lockAppNowForTesting() {
+        brandingAndLockController.lockNowForTesting()
+    }
+
+    // ==================== Date-Bound All-In-One Study Hub ("▶️ Start") ====================
+
+    fun shortcutOpenDateStudyStart() {
+        dateStudyHubController.openMandatoryDateSelection()
+    }
+
+    fun dismissDateStudyPicker() {
+        dateStudyHubController.dismissDatePickerDialog()
+    }
+
+    fun confirmDateStudyAndStart(examDateEpochMs: Long) {
+        if (!dateStudyState.value.isWorkspaceOpen) {
+            closeAllOverlaysForShortcut()
+        }
+        dateStudyHubController.confirmExamDateAndStart(examDateEpochMs)
+    }
+
+    fun openDateStudyChangeDate() {
+        dateStudyHubController.openChangeDateDialog()
+    }
+
+    fun setDateStudyHistoryVisible(visible: Boolean) {
+        dateStudyHubController.setHistorySheetVisible(visible)
+    }
+
+    fun jumpToDateStudyHistory(dateIso: String) {
+        dateStudyHubController.jumpToHistoryDate(dateIso)
+    }
+
+    fun selectDateStudyMode(mode: DateStudyMode) {
+        dateStudyHubController.selectMode(mode)
+    }
+
+    fun selectDateStudySubject(subject: WbbseSubject?) {
+        dateStudyHubController.selectSubject(subject)
+    }
+
+    fun triggerDateStudyModeAction() {
+        dateStudyHubController.triggerOneTapModeAction()
+    }
+
+    fun sendDateStudyMessage(rawText: String) {
+        dateStudyHubController.sendMessage(rawText)
+    }
+
+    fun attachDateStudyPhoto(uri: Uri) {
+        dateStudyHubController.attachPhotoUri(uri)
+    }
+
+    fun clearDateStudyPendingPhoto() {
+        dateStudyHubController.clearPendingPhoto()
+    }
+
+    fun clearDateStudyChat() {
+        ttsManager.stop()
+        dateStudyHubController.clearCurrentDateChat()
+    }
+
+    fun dismissDateStudyError() {
+        dateStudyHubController.clearError()
+    }
+
+    fun closeDateStudyWorkspace() {
+        dateStudyHubController.closeWorkspace()
     }
 
     private data class DataBundle(

@@ -65,12 +65,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.gguf.GgufFileInspector
+import com.example.model.AppBrandingUiState
+import com.example.model.AppLockUiState
 import com.example.model.DiscoveredGgufFile
 import com.example.model.GgufFileMetadata
 import com.example.model.GgufModelStatus
 import com.example.model.InferenceMode
+import com.example.model.LauncherDisguisePreset
 import com.example.model.LlamaInferenceConfig
 import com.example.model.TtsVoiceSettings
+import com.example.ui.branding.BrandedAppLogoAvatar
+import com.example.ui.branding.LocalAppBranding
 import com.example.ui.theme.MonoFontFamily
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -101,6 +106,21 @@ fun ModelManagerScreen(
     onDismissBackupStatus: () -> Unit = {},
     secretRecoveryKey: String = "",
     onOpenRecoveryKeyBackup: () -> Unit = {},
+    brandingState: AppBrandingUiState = AppBrandingUiState(),
+    appLockState: AppLockUiState = AppLockUiState(),
+    onSelectLauncherDisguise: (LauncherDisguisePreset) -> Unit = {},
+    onPrepareSystemPicker: () -> Unit = {},
+    onPickCustomLogoUri: (android.net.Uri) -> Unit = {},
+    onResetCustomLogo: () -> Unit = {},
+    onSaveCustomAppTitle: (String) -> Unit = {},
+    onResetCustomAppTitle: () -> Unit = {},
+    onDismissBrandingStatus: () -> Unit = {},
+    onEnableOrUpdateAppLockPin: (String, Boolean) -> Unit = { _, _ -> },
+    onEnableExistingAppLock: () -> Unit = {},
+    onDisableAppLockWithPinVerify: (String) -> Boolean = { false },
+    onToggleBiometricUnlock: (Boolean) -> Unit = {},
+    onTestLockNow: () -> Unit = {},
+    onDismissAppLockStatus: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Zero-permission Android Storage Access Framework (SAF) file picker
@@ -146,18 +166,79 @@ fun ModelManagerScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = stringResource(R.string.model_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onBackground
+                val branding = LocalAppBranding.current
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    BrandedAppLogoAvatar(
+                        size = 46.dp,
+                        shape = RoundedCornerShape(14.dp)
                     )
-                    Text(
-                        text = stringResource(R.string.model_subtitle),
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = if (branding.isRebrandedOrDisguised) {
+                                "${branding.effectiveTitle} • সেটিংস"
+                            } else {
+                                stringResource(R.string.model_title)
+                            },
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = if (branding.isRebrandedOrDisguised) {
+                                "অ্যাপ প্রাইভেসি, লোগো, ডিসগাইজ, লক ও মডেল সেটিংস"
+                            } else {
+                                stringResource(R.string.model_subtitle)
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
+            }
+
+            // A. Home Screen Launcher Icon & Name Disguise (5 Activity-Alias Presets)
+            item(key = "settings_launcher_disguise_item") {
+                LauncherDisguiseSettingsCard(
+                    brandingState = brandingState,
+                    onSelectPreset = onSelectLauncherDisguise,
+                    onDismissStatus = onDismissBrandingStatus
+                )
+            }
+
+            // B. Complete In-App Logo & Name Replacement (Gallery Logo + Custom App Title)
+            item(key = "settings_full_rebranding_item") {
+                FullAppRebrandingSettingsCard(
+                    brandingState = brandingState,
+                    onPrepareSystemPicker = onPrepareSystemPicker,
+                    onPickCustomLogoUri = onPickCustomLogoUri,
+                    onResetCustomLogo = onResetCustomLogo,
+                    onSaveCustomAppTitle = onSaveCustomAppTitle,
+                    onResetCustomAppTitle = onResetCustomAppTitle
+                )
+            }
+
+            // C. Strict App Lock Security (4-Digit PIN + Fingerprint / Face Biometric)
+            item(key = "settings_app_lock_item") {
+                AppLockSecuritySettingsCard(
+                    lockState = appLockState,
+                    onEnableOrUpdatePin = onEnableOrUpdateAppLockPin,
+                    onEnableExistingPin = onEnableExistingAppLock,
+                    onDisableWithPinVerify = onDisableAppLockWithPinVerify,
+                    onToggleBiometric = onToggleBiometricUnlock,
+                    onTestLockNow = onTestLockNow,
+                    onDismissStatus = onDismissAppLockStatus
+                )
             }
 
             // Status Notification Banner
@@ -246,7 +327,10 @@ fun ModelManagerScreen(
                         }
 
                         Button(
-                            onClick = { openDocumentLauncher.launch(arrayOf("*/*")) },
+                            onClick = {
+                                onPrepareSystemPicker()
+                                openDocumentLauncher.launch(arrayOf("*/*"))
+                            },
                             enabled = !ggufState.isImporting,
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
@@ -710,7 +794,10 @@ fun ModelManagerScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
-                                onClick = { createBackupLauncher.launch("EduAI_Backup.json") },
+                                onClick = {
+                                    onPrepareSystemPicker()
+                                    createBackupLauncher.launch("EduAI_Backup.json")
+                                },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .weight(1f)
@@ -722,7 +809,10 @@ fun ModelManagerScreen(
                                 Text("ব্যাকআপ সেভ", maxLines = 1)
                             }
                             OutlinedButton(
-                                onClick = { restoreBackupLauncher.launch(arrayOf("application/json", "*/*")) },
+                                onClick = {
+                                    onPrepareSystemPicker()
+                                    restoreBackupLauncher.launch(arrayOf("application/json", "*/*"))
+                                },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .weight(1f)

@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">EduAI Class 10</string>
     <string name="app_subtitle">WBBSE মাধ্যমিক এআই সহায়ক</string>
+    <string name="disguise_label_calculator">Calculator</string>
+    <string name="disguise_label_notes">My Notes</string>
+    <string name="disguise_label_calendar">Calendar</string>
+    <string name="disguise_label_vault">Personal Vault</string>
 
     <!-- Navigation -->
     <string name="nav_chat">চ্যাট</string>

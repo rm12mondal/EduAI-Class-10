@@ -31,7 +31,10 @@ data class StoredAppSettings(
     val fastLearningExamYear: Int = FastLearningContextHelper.defaultTargetExamYear(),
     val fastLearningPlanMonths: Float = SyllabusPlanOption.MONTHS_3.months,
     val fastLearningCompletedChapters: Set<String> = emptySet(),
-    val secretRecoveryKey: String = ""
+    val secretRecoveryKey: String = "",
+    val customAppTitle: String = "",
+    val customLogoPath: String? = null,
+    val launcherDisguiseId: String = ""
 )
 
 class SettingsDataStore(private val context: Context) {
@@ -53,6 +56,9 @@ class SettingsDataStore(private val context: Context) {
         val FAST_LEARNING_PLAN_MONTHS = floatPreferencesKey("fast_learning_plan_months")
         val FAST_LEARNING_COMPLETED_CHAPTERS = stringSetPreferencesKey("fast_learning_completed_chapters")
         val SECRET_RECOVERY_KEY = stringPreferencesKey("secret_recovery_key")
+        val CUSTOM_APP_TITLE = stringPreferencesKey("custom_app_title")
+        val CUSTOM_LOGO_PATH = stringPreferencesKey("custom_logo_path")
+        val LAUNCHER_DISGUISE_ID = stringPreferencesKey("launcher_disguise_id")
     }
 
     val settingsFlow: Flow<StoredAppSettings> = context.eduAiDataStore.data.map { prefs ->
@@ -77,7 +83,10 @@ class SettingsDataStore(private val context: Context) {
                 ?: SyllabusPlanOption.MONTHS_3.months,
             fastLearningCompletedChapters = prefs[Keys.FAST_LEARNING_COMPLETED_CHAPTERS]
                 ?: emptySet(),
-            secretRecoveryKey = prefs[Keys.SECRET_RECOVERY_KEY] ?: ""
+            secretRecoveryKey = prefs[Keys.SECRET_RECOVERY_KEY] ?: "",
+            customAppTitle = prefs[Keys.CUSTOM_APP_TITLE] ?: "",
+            customLogoPath = prefs[Keys.CUSTOM_LOGO_PATH],
+            launcherDisguiseId = prefs[Keys.LAUNCHER_DISGUISE_ID] ?: ""
         )
     }
 
@@ -177,6 +186,33 @@ class SettingsDataStore(private val context: Context) {
             context.eduAiDataStore.edit { prefs ->
                 prefs[Keys.SECRET_RECOVERY_KEY] = cleaned
             }
+        }
+    }
+
+    suspend fun setCustomAppTitle(title: String) {
+        context.eduAiDataStore.edit { prefs ->
+            val trimmed = title.trim()
+            if (trimmed.isEmpty()) {
+                prefs.remove(Keys.CUSTOM_APP_TITLE)
+            } else {
+                prefs[Keys.CUSTOM_APP_TITLE] = trimmed
+            }
+        }
+    }
+
+    suspend fun setCustomLogoPath(path: String?) {
+        context.eduAiDataStore.edit { prefs ->
+            if (path.isNullOrBlank()) {
+                prefs.remove(Keys.CUSTOM_LOGO_PATH)
+            } else {
+                prefs[Keys.CUSTOM_LOGO_PATH] = path
+            }
+        }
+    }
+
+    suspend fun setLauncherDisguiseId(presetId: String) {
+        context.eduAiDataStore.edit { prefs ->
+            prefs[Keys.LAUNCHER_DISGUISE_ID] = presetId
         }
     }
 

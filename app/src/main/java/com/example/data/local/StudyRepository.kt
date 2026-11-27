@@ -69,8 +69,17 @@ class StudyRepository(
     fun observeSectionMessages(section: ChatSection): Flow<List<ChatMessageEntity>> =
         chatMessageDao.observeMessagesBySection(section.id)
 
+    fun observeRawSectionMessages(rawSectionId: String): Flow<List<ChatMessageEntity>> =
+        chatMessageDao.observeMessagesBySection(rawSectionId)
+
     suspend fun getSectionMessagesSnapshot(section: ChatSection): List<ChatMessageEntity> =
         chatMessageDao.getMessagesBySectionSnapshot(section.id)
+
+    suspend fun getRawSectionMessagesSnapshot(rawSectionId: String): List<ChatMessageEntity> =
+        chatMessageDao.getMessagesBySectionSnapshot(rawSectionId)
+
+    fun observeDateStudyMessages(): Flow<List<ChatMessageEntity>> =
+        chatMessageDao.observeDateStudyMessages()
 
     suspend fun getAllChatMessagesSnapshot(): List<ChatMessageEntity> =
         chatMessageDao.getAllMessagesSnapshot()
@@ -90,6 +99,10 @@ class StudyRepository(
 
     suspend fun clearSectionChat(section: ChatSection) {
         chatMessageDao.clearSection(section.id)
+    }
+
+    suspend fun clearRawSectionChat(rawSectionId: String) {
+        chatMessageDao.clearSection(rawSectionId)
     }
 
     suspend fun clearChatHistory() {

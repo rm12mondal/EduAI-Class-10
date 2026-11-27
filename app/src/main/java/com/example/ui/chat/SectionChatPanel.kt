@@ -82,6 +82,8 @@ import com.example.data.media.NotebookImageHelper
 import com.example.model.InferenceMode
 import com.example.model.SectionChatUiState
 import com.example.model.WbbseSubject
+import com.example.ui.branding.BrandedAiAssistantAvatar
+import com.example.ui.branding.LocalAppBranding
 import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -119,6 +121,9 @@ fun SectionChatPanel(
     onConsumeVoiceInjectedText: () -> Unit = {},
     extraAssistantActionLabel: String? = null,
     onExtraAssistantAction: ((ChatMessageEntity) -> Unit)? = null,
+    customHeaderTitle: String? = null,
+    customHeaderSubtitle: String? = null,
+    onPrepareSystemPicker: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -191,6 +196,7 @@ fun SectionChatPanel(
     }
 
     fun triggerCamera() {
+        onPrepareSystemPicker()
         val hasCamera = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.CAMERA
@@ -205,6 +211,7 @@ fun SectionChatPanel(
     }
 
     fun triggerGallery() {
+        onPrepareSystemPicker()
         galleryPickerLauncher.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
         )
@@ -239,7 +246,7 @@ fun SectionChatPanel(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = state.section.titleBn,
+                            text = customHeaderTitle ?: state.section.titleBn,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -260,7 +267,7 @@ fun SectionChatPanel(
                         }
                     }
                     Text(
-                        text = "${state.section.subtitleBn} • সেভড: ${state.messages.size}",
+                        text = "${customHeaderSubtitle ?: state.section.subtitleBn} • সেভড: ${state.messages.size}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -707,24 +714,35 @@ private fun SectionChatBubble(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (!isUser) {
+                    val branding = LocalAppBranding.current
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            color = accentColor.copy(alpha = 0.14f),
-                            shape = RoundedCornerShape(8.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text(
-                                text = message.sourceLabel.ifBlank { "EduAI" },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = accentColor,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            BrandedAiAssistantAvatar(
+                                size = 22.dp,
+                                defaultTint = accentColor
                             )
+                            Surface(
+                                color = accentColor.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = message.sourceLabel.ifBlank { branding.effectiveTitle },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = accentColor,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                         subject?.let { subj ->
                             Text(

@@ -111,6 +111,9 @@ import com.example.model.InferenceMode
 import com.example.model.ScorePredictorSummary
 import com.example.model.SpacedRevisionUiState
 import com.example.model.WbbseSubject
+import com.example.ui.branding.BrandedAiAssistantAvatar
+import com.example.ui.branding.BrandedAppLogoAvatar
+import com.example.ui.branding.LocalAppBranding
 import com.example.ui.extras.DailyStudyPlannerCard
 import com.example.ui.master.ScorePredictorCard
 import com.example.ui.master.TodayRevisionCapsuleCard
@@ -521,42 +524,31 @@ private fun HybridChatHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val branding = LocalAppBranding.current
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.secondary
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.School,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                    BrandedAppLogoAvatar(
+                        size = 40.dp,
+                        shape = RoundedCornerShape(12.dp)
+                    )
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = stringResource(R.string.app_name),
+                            text = branding.effectiveTitle,
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("home_app_title")
                         )
                         Text(
-                            text = stringResource(R.string.app_subtitle),
+                            text = if (branding.isRebrandedOrDisguised) {
+                                "স্মার্ট অফলাইন স্টাডি ওয়ার্কস্পেস"
+                            } else {
+                                stringResource(R.string.app_subtitle)
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -868,9 +860,10 @@ private fun ChatWelcomeState(
                             .fillMaxWidth()
                             .height(155.dp)
                     ) {
+                        val welcomeBranding = LocalAppBranding.current
                         Image(
                             painter = painterResource(id = R.drawable.img_study_banner_1795374668926),
-                            contentDescription = "EduAI Class 10 Study Desk",
+                            contentDescription = "${welcomeBranding.effectiveTitle} Study Desk",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -886,6 +879,33 @@ private fun ChatWelcomeState(
                                     )
                                 )
                         )
+                        if (welcomeBranding.isRebrandedOrDisguised) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color(0xAA0F172A),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                ) {
+                                    BrandedAppLogoAvatar(
+                                        size = 26.dp,
+                                        shape = RoundedCornerShape(7.dp)
+                                    )
+                                    Text(
+                                        text = welcomeBranding.effectiveTitle,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
                         Column(
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
@@ -908,7 +928,11 @@ private fun ChatWelcomeState(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = stringResource(R.string.chat_welcome_title),
+                                text = if (welcomeBranding.hasCustomTitle) {
+                                    welcomeBranding.effectiveTitle
+                                } else {
+                                    stringResource(R.string.chat_welcome_title)
+                                },
                                 style = MaterialTheme.typography.titleLarge,
                                 color = Color.White
                             )
@@ -1153,11 +1177,10 @@ private fun ChatBubbleItem(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(
-                                imageVector = if (isOnlineMsg) Icons.Rounded.Cloud else Icons.Rounded.Memory,
-                                contentDescription = null,
-                                tint = if (isOnlineMsg) OnlineCobalt else SageOffline,
-                                modifier = Modifier.size(15.dp)
+                            BrandedAiAssistantAvatar(
+                                size = 22.dp,
+                                defaultIcon = if (isOnlineMsg) Icons.Rounded.Cloud else Icons.Rounded.Memory,
+                                defaultTint = if (isOnlineMsg) OnlineCobalt else SageOffline
                             )
                             Text(
                                 text = message.sourceLabel,
