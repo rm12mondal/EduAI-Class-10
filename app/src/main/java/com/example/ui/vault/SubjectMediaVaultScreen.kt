@@ -62,7 +62,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -70,13 +69,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.media.MediaVaultManager
-import com.example.data.media.NotebookImageHelper
 import com.example.data.pdf.EduPdfManager
 import com.example.model.MediaVaultItem
 import com.example.model.SubjectMediaVaultUiState
 import com.example.model.VaultMediaType
 import com.example.model.WbbseSubject
 import com.example.ui.chat.FullScreenDiagramDialog
+import com.example.ui.common.rememberAsyncCachedImageBitmap
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import java.text.SimpleDateFormat
@@ -282,7 +281,7 @@ fun SubjectMediaVaultScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    item {
+                    item(key = "vault_type_all") {
                         TypeFilterChip(
                             label = "সব ধরন",
                             selected = state.selectedTypeFilter == null,
@@ -291,7 +290,7 @@ fun SubjectMediaVaultScreen(
                             onClick = { onSelectTypeFilter(null) }
                         )
                     }
-                    items(VaultMediaType.entries) { type ->
+                    items(VaultMediaType.entries, key = { it.name }) { type ->
                         val accent = when (type) {
                             VaultMediaType.PHOTO -> OnlineCobalt
                             VaultMediaType.DIAGRAM -> DiagramPurple
@@ -463,7 +462,7 @@ fun SubjectMediaVaultScreen(
                         .fillMaxSize()
                         .testTag("vault_items_list")
                 ) {
-                    item {
+                    item(key = "vault_summary_header") {
                         Text(
                             text = "দেখানো হচ্ছে: ${filteredItems.size}টি ফাইল • মোট সাইজ ${MediaVaultManager.formatFileSize(filteredBytes)}",
                             style = MaterialTheme.typography.labelSmall,
@@ -638,9 +637,7 @@ private fun MediaVaultItemCard(
                     }
                 }
             } else {
-                val thumb = remember(item.filePath) {
-                    NotebookImageHelper.decodeFileThumbnail(item.filePath, maxSizePx = 220)
-                }
+                val thumb = rememberAsyncCachedImageBitmap(item.filePath, maxSizePx = 220)
                 Box(
                     modifier = Modifier
                         .size(66.dp)
@@ -650,7 +647,7 @@ private fun MediaVaultItemCard(
                 ) {
                     if (thumb != null) {
                         Image(
-                            bitmap = thumb.asImageBitmap(),
+                            bitmap = thumb,
                             contentDescription = item.displayTitle,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

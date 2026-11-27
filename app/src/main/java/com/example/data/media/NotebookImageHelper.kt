@@ -180,19 +180,79 @@ object NotebookImageHelper {
         }
     }
 
-    fun decodeFileThumbnail(path: String, maxSizePx: Int = 960): Bitmap? {
+    private val thumbnailCache: android.util.LruCache<String, Bitmap> by lazy {
+        val maxKb = (Runtime.getRuntime().maxMemory() / 1024L).toInt()
+        val cacheKb = (maxKb / 12).coerceIn(4 * 1024, 16 * 1024)
+        object : android.util.LruCache<String, Bitmap>(cacheKb) {
+            override fun sizeOf(key: String, value: Bitmap): Int {
+                return (value.allocationByteCount / 1024).coerceAtLeast(1)
+            }
+        }
+    }
+
+    private fun cacheKey(path: String, maxSizePx: Int): String = "$path#$maxSizePx"
+
+    fun getCachedThumbnail(path: String, maxSizePx: Int = 480): Bitmap? {
+        val cached = thumbnailCache.get(cacheKey(path, maxSizePx))
+        return if (cached != null && !cached.isRecycled) cached else null
+    }
+
+    fun evictFromCache(path: String) {
+        val snapshot = thumbnailCache.snapshot()
+        snapshot.keys.forEach { key ->
+            if (key.startsWith("$path#")) {
+                thumbnailCache.remove(key)
+            }
+        }
+    }
+
+    /**
+     * Asynchronously decodes a downsampled thumbnail on `Dispatchers.IO` and caches it
+     * in the in-memory `LruCache` so scrolling through chat messages and the Media Vault
+     * stays strictly off the UI thread.
+     */
+    suspend fun loadThumbnailAsync(path: String, maxSizePx: Int = 480): Bitmap? {
+        getCachedThumbnail(path, maxSizePx)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            getCachedThumbnail(path, maxSizePx)?.let { return@withContext it }
+            val decoded = decodeFileThumbnail(path, maxSizePx)
+            if (decoded != null) {
+                thumbnailCache.put(cacheKey(path, maxSizePx), decoded)
+            }
+            decoded
+        }
+    }
+
+    /**
+     * Asynchronously decodes a high-clarity display bitmap (capped at [maxSizePx]) on `Dispatchers.IO`
+     * for full-screen zoom dialogs, avoiding full-resolution UI-thread decodes.
+     */
+    suspend fun loadFullBitmapAsync(path: String, maxSizePx: Int = 1280): Bitmap? {
+        return loadThumbnailAsync(path, maxSizePx)
+    }
+
+    fun decodeFileThumbnail(path: String, maxSizePx: Int = 480): Bitmap? {
+        getCachedThumbnail(path, maxSizePx)?.let { return it }
         return try {
             val file = File(path)
             if (!file.exists()) return null
             val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, opts)
             val longest = max(opts.outWidth, opts.outHeight)
+            if (longest <= 0) return null
             var sample = 1
             while (longest / (sample * 2) >= maxSizePx) sample *= 2
-            BitmapFactory.decodeFile(
+            val decoded = BitmapFactory.decodeFile(
                 path,
-                BitmapFactory.Options().apply { inSampleSize = sample }
+                BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = if (maxSizePx <= 640) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+                }
             )
+            if (decoded != null) {
+                thumbnailCache.put(cacheKey(path, maxSizePx), decoded)
+            }
+            decoded
         } catch (e: Exception) {
             Log.e(TAG, "Failed to decode thumbnail $path", e)
             null
@@ -200,13 +260,6 @@ object NotebookImageHelper {
     }
 
     fun decodeFullBitmap(path: String): Bitmap? {
-        return try {
-            val file = File(path)
-            if (!file.exists()) return null
-            BitmapFactory.decodeFile(path)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to decode full bitmap $path", e)
-            null
-        }
+        return decodeFileThumbnail(path, maxSizePx = 1280)
     }
 }

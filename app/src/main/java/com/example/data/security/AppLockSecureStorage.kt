@@ -6,6 +6,8 @@ import android.util.Base64
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
@@ -30,8 +32,19 @@ class AppLockSecureStorage(context: Context) {
 
     private val appContext = context.applicationContext
 
-    private val prefs: SharedPreferences by lazy {
-        createEncryptedPrefs(appContext)
+    private val prefsLock = Any()
+
+    @Volatile
+    private var cachedPrefs: SharedPreferences? = null
+
+    @Volatile
+    private var cachedSnapshot: AppLockStoredSnapshot? = null
+
+    private fun getOrInitPrefs(): SharedPreferences {
+        cachedPrefs?.let { return it }
+        return synchronized(prefsLock) {
+            cachedPrefs ?: createEncryptedPrefs(appContext).also { cachedPrefs = it }
+        }
     }
 
     private fun createEncryptedPrefs(context: Context): SharedPreferences {
@@ -53,7 +66,18 @@ class AppLockSecureStorage(context: Context) {
         }
     }
 
+    /**
+     * Initializes `EncryptedSharedPreferences` strictly on `Dispatchers.IO` and caches the
+     * resulting snapshot in memory so the main thread is never blocked on cold start.
+     */
+    suspend fun readSnapshotAsync(): AppLockStoredSnapshot = withContext(Dispatchers.IO) {
+        readSnapshot()
+    }
+
+    fun getCachedSnapshot(): AppLockStoredSnapshot? = cachedSnapshot
+
     fun readSnapshot(): AppLockStoredSnapshot {
+        val prefs = getOrInitPrefs()
         val hash = prefs.getString(KEY_PIN_HASH, null)
         val salt = prefs.getString(KEY_PIN_SALT, null)
         val hasPin = !hash.isNullOrBlank() && !salt.isNullOrBlank()
@@ -67,11 +91,12 @@ class AppLockSecureStorage(context: Context) {
             isBiometricEnabled = bioEnabled,
             failedAttempts = failed,
             lockoutUntilEpochMs = lockoutUntil
-        )
+        ).also { cachedSnapshot = it }
     }
 
     fun savePinAndEnable(pin: String, enableBiometric: Boolean? = null): Boolean {
         if (!isValidFourDigitPin(pin)) return false
+        val prefs = getOrInitPrefs()
         val salt = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
         val hash = derivePinHash(pin, salt)
         prefs.edit().apply {
@@ -84,10 +109,12 @@ class AppLockSecureStorage(context: Context) {
             putInt(KEY_FAILED_ATTEMPTS, 0)
             putLong(KEY_LOCKOUT_UNTIL, 0L)
         }.apply()
+        readSnapshot()
         return true
     }
 
     fun verifyPin(candidatePin: String): PinVerifyOutcome {
+        val prefs = getOrInitPrefs()
         val now = System.currentTimeMillis()
         val lockoutUntil = prefs.getLong(KEY_LOCKOUT_UNTIL, 0L)
         if (lockoutUntil > now) {
@@ -124,6 +151,7 @@ class AppLockSecureStorage(context: Context) {
                 .putInt(KEY_FAILED_ATTEMPTS, 0)
                 .putLong(KEY_LOCKOUT_UNTIL, 0L)
                 .apply()
+            readSnapshot()
             PinVerifyOutcome.Success
         } else {
             val nextAttempts = prefs.getInt(KEY_FAILED_ATTEMPTS, 0) + 1
@@ -136,6 +164,7 @@ class AppLockSecureStorage(context: Context) {
                 .putInt(KEY_FAILED_ATTEMPTS, if (nextLockout > 0L) 0 else nextAttempts)
                 .putLong(KEY_LOCKOUT_UNTIL, nextLockout)
                 .apply()
+            readSnapshot()
             if (nextLockout > 0L) {
                 PinVerifyOutcome.LockedOut(
                     remainingSeconds = LOCKOUT_DURATION_MS / 1000L,
@@ -151,22 +180,27 @@ class AppLockSecureStorage(context: Context) {
     }
 
     fun setBiometricEnabled(enabled: Boolean) {
+        val prefs = getOrInitPrefs()
         prefs.edit().putBoolean(KEY_BIOMETRIC_ENABLED, enabled).apply()
+        readSnapshot()
     }
 
     fun disableLock() {
+        val prefs = getOrInitPrefs()
         prefs.edit()
             .putBoolean(KEY_LOCK_ENABLED, false)
             .putBoolean(KEY_BIOMETRIC_ENABLED, false)
             .putInt(KEY_FAILED_ATTEMPTS, 0)
             .putLong(KEY_LOCKOUT_UNTIL, 0L)
             .apply()
+        readSnapshot()
     }
 
     fun enableLockIfPinExists(): Boolean {
         val snap = readSnapshot()
         if (!snap.hasPinConfigured) return false
-        prefs.edit().putBoolean(KEY_LOCK_ENABLED, true).apply()
+        getOrInitPrefs().edit().putBoolean(KEY_LOCK_ENABLED, true).apply()
+        readSnapshot()
         return true
     }
 

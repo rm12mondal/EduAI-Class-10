@@ -34,10 +34,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -167,8 +169,6 @@ fun EduAiApp(
     val languageLabState by viewModel.languageLabState.collectAsStateWithLifecycle()
     val mathSolverState by viewModel.mathSolverState.collectAsStateWithLifecycle()
     val backupStatusMessage by viewModel.backupStatusMessage.collectAsStateWithLifecycle()
-    val speechState by viewModel.speechState.collectAsStateWithLifecycle()
-    val podcastState by viewModel.podcastState.collectAsStateWithLifecycle()
     val mindMapTree by viewModel.mindMapTree.collectAsStateWithLifecycle()
     val voiceInjectedText by viewModel.voiceInjectedText.collectAsStateWithLifecycle()
     val fastLearningState by viewModel.fastLearningState.collectAsStateWithLifecycle()
@@ -189,9 +189,13 @@ fun EduAiApp(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Decode custom gallery logo once whenever path/version updates
-    val customLogoBitmap = remember(brandingState.customLogoPath, brandingState.logoVersion) {
-        AppBrandingManager.decodeCustomLogoBitmap(brandingState.customLogoPath)?.asImageBitmap()
+    // Decode custom gallery logo asynchronously on Dispatchers.IO with instant in-memory cache hit
+    val customLogoBitmap by produceState<ImageBitmap?>(
+        initialValue = AppBrandingManager.getCachedCustomLogoBitmap(brandingState.customLogoPath)?.asImageBitmap(),
+        key1 = brandingState.customLogoPath,
+        key2 = brandingState.logoVersion
+    ) {
+        value = AppBrandingManager.decodeCustomLogoBitmapAsync(brandingState.customLogoPath)?.asImageBitmap()
     }
     val resolvedBranding = remember(
         brandingState.effectiveAppTitle,
@@ -207,7 +211,7 @@ fun EduAiApp(
         )
     }
 
-    // Sync Android Recent Apps task switcher title & icon dynamically
+    // Sync Android Recent Apps task switcher title & icon off the main thread
     LaunchedEffect(
         brandingState.effectiveAppTitle,
         brandingState.customLogoPath,
@@ -216,7 +220,7 @@ fun EduAiApp(
     ) {
         val activity = BiometricUnlockHelper.findFragmentActivity(context)
         if (activity != null) {
-            AppBrandingManager.applyTaskDescription(
+            AppBrandingManager.applyTaskDescriptionAsync(
                 activity = activity,
                 effectiveTitle = brandingState.effectiveAppTitle,
                 customLogoPath = brandingState.customLogoPath,
@@ -236,10 +240,10 @@ fun EduAiApp(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Brief Branded Launch Splash showing custom logo & custom title on cold start
+    // Ultra-fast startup transition (<400ms) showing custom logo & title without artificial lag
     var showLaunchSplash by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        delay(650L)
+        delay(220L)
         showLaunchSplash = false
     }
 
@@ -797,11 +801,10 @@ fun EduAiApp(
             )
         }
 
-        // Draggable AssistiveTouch-Style Floating "D" Action Hub
-        FloatingDActionHub(
-            speechState = speechState,
+        // Isolated Draggable AssistiveTouch-Style Floating "D" Action Hub
+        IsolatedFloatingDHubHost(
+            viewModel = viewModel,
             exactTextbookMode = uiState.exactTextbookMode,
-            podcastState = podcastState,
             hasLatestAnswerForMindMap = uiState.chatMessages.any { it.role != "user" } ||
                 smartLearningState.messages.any { it.role != "user" } ||
                 uiState.examChat.messages.any { it.role != "user" } ||
@@ -809,24 +812,6 @@ fun EduAiApp(
                 brahmastramChatState.messages.any { it.role != "user" } ||
                 stepByStepMemoryChatState.messages.any { it.role != "user" } ||
                 dateStudyChatState.messages.any { it.role != "user" },
-            onSelectVoiceLanguage = viewModel::setVoiceInputLanguage,
-            onToggleVoiceListening = viewModel::toggleVoiceListening,
-            onToggleExactTextbookMode = viewModel::toggleExactTextbookMode,
-            onOpenMindMap = viewModel::openMindMapForLatestAnswer,
-            onTogglePodcastPlayPause = viewModel::toggleQuickPodcastPlayPause,
-            onStopPodcast = viewModel::stopQuickPodcast,
-            onSetPodcastSpeed = viewModel::setQuickPodcastSpeed,
-            onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
-            onShortcutDateStudyStart = viewModel::shortcutOpenDateStudyStart,
-            onShortcutFastLearning = viewModel::shortcutOpenFastLearning,
-            onShortcutStepByStepMemory = viewModel::shortcutOpenStepByStepMemory,
-            onShortcutMediaVault = viewModel::shortcutOpenMediaVault,
-            onShortcutRecoveryBackup = viewModel::shortcutOpenRecoveryBackup,
-            onShortcutSmartLearning = viewModel::shortcutOpenSmartLearning,
-            onShortcutBrahmastram = viewModel::shortcutOpenBrahmastram,
-            onShortcutGrammarLab = viewModel::shortcutOpenGrammarLab,
-            onShortcutExportPdf = viewModel::exportLatestToPdfFromDHub,
-            onShortcutSettings = viewModel::shortcutOpenSettings,
             onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
         )
 
@@ -888,6 +873,47 @@ fun EduAiApp(
         }
     }
     }
+}
+
+/**
+ * Independent host for FloatingDActionHub so voice partial-transcript updates,
+ * podcast progress updates, and dragging never trigger root EduAiApp recomposition.
+ */
+@Composable
+private fun IsolatedFloatingDHubHost(
+    viewModel: EduAiViewModel,
+    exactTextbookMode: Boolean,
+    hasLatestAnswerForMindMap: Boolean,
+    onShowMessage: (String) -> Unit
+) {
+    val speechState by viewModel.speechState.collectAsStateWithLifecycle()
+    val podcastState by viewModel.podcastState.collectAsStateWithLifecycle()
+
+    FloatingDActionHub(
+        speechState = speechState,
+        exactTextbookMode = exactTextbookMode,
+        podcastState = podcastState,
+        hasLatestAnswerForMindMap = hasLatestAnswerForMindMap,
+        onSelectVoiceLanguage = viewModel::setVoiceInputLanguage,
+        onToggleVoiceListening = viewModel::toggleVoiceListening,
+        onToggleExactTextbookMode = viewModel::toggleExactTextbookMode,
+        onOpenMindMap = viewModel::openMindMapForLatestAnswer,
+        onTogglePodcastPlayPause = viewModel::toggleQuickPodcastPlayPause,
+        onStopPodcast = viewModel::stopQuickPodcast,
+        onSetPodcastSpeed = viewModel::setQuickPodcastSpeed,
+        onOpenFullPodcastPlayer = viewModel::openFullPodcastFromDHub,
+        onShortcutDateStudyStart = viewModel::shortcutOpenDateStudyStart,
+        onShortcutFastLearning = viewModel::shortcutOpenFastLearning,
+        onShortcutStepByStepMemory = viewModel::shortcutOpenStepByStepMemory,
+        onShortcutMediaVault = viewModel::shortcutOpenMediaVault,
+        onShortcutRecoveryBackup = viewModel::shortcutOpenRecoveryBackup,
+        onShortcutSmartLearning = viewModel::shortcutOpenSmartLearning,
+        onShortcutBrahmastram = viewModel::shortcutOpenBrahmastram,
+        onShortcutGrammarLab = viewModel::shortcutOpenGrammarLab,
+        onShortcutExportPdf = viewModel::exportLatestToPdfFromDHub,
+        onShortcutSettings = viewModel::shortcutOpenSettings,
+        onShowMessage = onShowMessage
+    )
 }
 
 private fun pocketCategoryForSubject(subject: WbbseSubject): PocketBookCategory = when (subject) {
@@ -1002,7 +1028,8 @@ private fun ActiveScreenHost(
             onOpenRapidFire = viewModel::openRapidFire,
             onShowSnackbar = onShowSnackbar,
             voiceInjectedText = voiceInjectedText,
-            onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText
+            onConsumeVoiceInjectedText = viewModel::consumeVoiceInjectedText,
+            examHallRemainingSeconds = viewModel.examHallRemainingSeconds
         )
 
         AppTab.TOPPER -> TopperScreen(

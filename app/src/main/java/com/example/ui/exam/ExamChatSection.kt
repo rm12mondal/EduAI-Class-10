@@ -88,10 +88,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.ai.ExamIntentRouter
 import com.example.data.master.MathUnicodeFormatter
 import com.example.data.media.NotebookImageHelper
+import com.example.ui.common.rememberAsyncCachedImageBitmap
 import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.model.ActiveExamSession
 import com.example.model.ExamChatIntent
@@ -111,6 +113,8 @@ import com.example.ui.theme.TerracottaAccent
 import com.example.viewmodel.EduAiUiState
 import com.example.viewmodel.PendingPhotoAttachment
 import com.example.viewmodel.StreamingDraft
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * 3-in-1 Intelligent WBBSE Madhyamik Exam & Study Chat Box:
@@ -137,6 +141,7 @@ fun ExamChatSection(
     onShowSnackbar: (String) -> Unit,
     voiceInjectedText: String? = null,
     onConsumeVoiceInjectedText: () -> Unit = {},
+    examHallRemainingSeconds: StateFlow<Long?> = remember { MutableStateFlow(null) },
     modifier: Modifier = Modifier
 ) {
     val examChat = uiState.examChat
@@ -288,6 +293,7 @@ fun ExamChatSection(
         examChat.activeSession?.let { session ->
             ActiveExamSessionBanner(
                 session = session,
+                remainingSecondsFlow = examHallRemainingSeconds,
                 onTogglePause = onToggleSessionPause,
                 onEndSession = onEndExamSession
             )
@@ -468,21 +474,20 @@ fun ExamChatSection(
 @Composable
 private fun ActiveExamSessionBanner(
     session: ActiveExamSession,
+    remainingSecondsFlow: StateFlow<Long?>,
     onTogglePause: () -> Unit,
     onEndSession: () -> Unit
 ) {
     val isMadhyamik = session.mode == ExamSessionMode.MADHYAMIK_TIMED
-    val isUrgent = isMadhyamik && session.remainingSeconds in 1..300
-    val accent = when {
+    val baseAccent = when {
         session.isTimeUp -> MaterialTheme.colorScheme.error
-        isUrgent -> TerracottaAccent
         isMadhyamik -> OnlineCobalt
         else -> SageOffline
     }
 
     Surface(
-        color = accent.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+        color = baseAccent.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, baseAccent.copy(alpha = 0.45f)),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("exam_active_session_banner")
@@ -506,13 +511,13 @@ private fun ActiveExamSessionBanner(
                     Icon(
                         imageVector = if (isMadhyamik) Icons.Rounded.Timer else Icons.Rounded.Description,
                         contentDescription = null,
-                        tint = accent,
+                        tint = baseAccent,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
                         text = session.title,
                         style = MaterialTheme.typography.titleSmall,
-                        color = accent,
+                        color = baseAccent,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -530,7 +535,7 @@ private fun ActiveExamSessionBanner(
                             Icon(
                                 imageVector = if (session.isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
                                 contentDescription = if (session.isPaused) "Resume timer" else "Pause timer",
-                                tint = accent
+                                tint = baseAccent
                             )
                         }
                     }
@@ -543,25 +548,19 @@ private fun ActiveExamSessionBanner(
                         Icon(
                             imageVector = Icons.Rounded.Close,
                             contentDescription = "End exam session",
-                            tint = accent
+                            tint = baseAccent
                         )
                     }
                 }
             }
 
             if (isMadhyamik) {
-                val timeLabel = if (session.isTimeUp) {
-                    "⏰ সময় শেষ! এখন তোমার উত্তরগুলো জমা দাও (টাইপ বা খাতার ছবি)!"
-                } else {
-                    val formatted = ExamIntentRouter.formatCountdownBengali(session.remainingSeconds)
-                    if (session.isPaused) "⏸ বিরতি — তোমার কাছে বাকি সময়: $formatted"
-                    else "⏳ তোমার কাছে বাকি সময়: $formatted"
-                }
-                Text(
-                    text = timeLabel,
-                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
-                    color = accent,
-                    fontWeight = FontWeight.Bold
+                LiveExamHallCountdownText(
+                    remainingSecondsFlow = remainingSecondsFlow,
+                    fallbackSeconds = session.remainingSeconds,
+                    isPaused = session.isPaused,
+                    isTimeUp = session.isTimeUp,
+                    defaultAccent = baseAccent
                 )
             } else {
                 val details = buildList {
@@ -572,11 +571,45 @@ private fun ActiveExamSessionBanner(
                 Text(
                     text = details,
                     style = MaterialTheme.typography.labelMedium,
-                    color = accent
+                    color = baseAccent
                 )
             }
         }
     }
+}
+
+/**
+ * Isolated per-second countdown label scope so 1-second exam timer ticks only
+ * recompose this single Text node rather than the entire screen or LazyColumn.
+ */
+@Composable
+private fun LiveExamHallCountdownText(
+    remainingSecondsFlow: StateFlow<Long?>,
+    fallbackSeconds: Long,
+    isPaused: Boolean,
+    isTimeUp: Boolean,
+    defaultAccent: Color
+) {
+    val liveSeconds by remainingSecondsFlow.collectAsStateWithLifecycle()
+    val effectiveSeconds = liveSeconds ?: fallbackSeconds
+    val textColor = when {
+        isTimeUp -> MaterialTheme.colorScheme.error
+        effectiveSeconds in 1..300 -> TerracottaAccent
+        else -> defaultAccent
+    }
+    val timeLabel = if (isTimeUp) {
+        "⏰ সময় শেষ! এখন তোমার উত্তরগুলো জমা দাও (টাইপ বা খাতার ছবি)!"
+    } else {
+        val formatted = ExamIntentRouter.formatCountdownBengali(effectiveSeconds)
+        if (isPaused) "⏸ বিরতি — তোমার কাছে বাকি সময়: $formatted"
+        else "⏳ তোমার কাছে বাকি সময়: $formatted"
+    }
+    Text(
+        text = timeLabel,
+        style = MaterialTheme.typography.labelLarge.copy(fontFamily = MonoFontFamily),
+        color = textColor,
+        fontWeight = FontWeight.Bold
+    )
 }
 
 @Composable
@@ -842,10 +875,10 @@ private fun ExamChatMessageBubble(
 
                 // Attached User Handwritten Photo Thumbnail
                 message.userPhotoPath?.let { path ->
-                    val bmp = remember(path) { NotebookImageHelper.decodeFileThumbnail(path, maxSizePx = 720) }
+                    val bmp = rememberAsyncCachedImageBitmap(path, maxSizePx = 480)
                     if (bmp != null) {
                         Image(
-                            bitmap = bmp.asImageBitmap(),
+                            bitmap = bmp,
                             contentDescription = "Submitted handwritten sheet",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

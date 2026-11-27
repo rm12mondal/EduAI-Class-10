@@ -108,6 +108,7 @@ import com.example.ui.chat.DiagramGeneratingBanner
 import com.example.ui.chat.FullScreenDiagramDialog
 import com.example.ui.chat.GeneratedDiagramCard
 import com.example.ui.chat.rememberVoiceInputLauncher
+import com.example.ui.common.rememberAsyncCachedImageBitmap
 import com.example.ui.master.TopperAnswerFormatToggleBlock
 import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.ui.theme.OnlineCobalt
@@ -885,7 +886,7 @@ private fun SmartLearningWelcomeView(
             )
         }
 
-        items(starterPrompts) { prompt ->
+        items(starterPrompts, key = { it }) { prompt ->
             Card(
                 onClick = { onQuickAsk(prompt) },
                 shape = RoundedCornerShape(14.dp),
@@ -989,10 +990,10 @@ private fun SmartLearningMessageCard(
 
                 // User's uploaded textbook/math photo
                 message.userPhotoPath?.let { photoPath ->
-                    val bmp = remember(photoPath) { NotebookImageHelper.decodeFileThumbnail(photoPath, 720) }
+                    val bmp = rememberAsyncCachedImageBitmap(photoPath, maxSizePx = 480)
                     if (bmp != null) {
                         Image(
-                            bitmap = bmp.asImageBitmap(),
+                            bitmap = bmp,
                             contentDescription = "Uploaded textbook or math problem photo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

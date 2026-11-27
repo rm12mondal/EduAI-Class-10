@@ -52,7 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -64,7 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.R
-import com.example.data.media.NotebookImageHelper
+import com.example.ui.common.rememberAsyncCachedImageBitmap
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
@@ -180,9 +179,7 @@ fun GeneratedDiagramCard(
     onZoomClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(imagePath) {
-        NotebookImageHelper.decodeFileThumbnail(imagePath, maxSizePx = 1080)
-    }
+    val bitmap = rememberAsyncCachedImageBitmap(imagePath, maxSizePx = 720)
     if (bitmap == null) return
 
     Surface(
@@ -229,7 +226,7 @@ fun GeneratedDiagramCard(
             }
 
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = bitmap,
                 contentDescription = "AI Generated 2D Educational Diagram",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
@@ -281,9 +278,7 @@ fun FullScreenDiagramDialog(
     imagePath: String,
     onDismiss: () -> Unit
 ) {
-    val fullBitmap = remember(imagePath) {
-        NotebookImageHelper.decodeFullBitmap(imagePath)
-    }
+    val fullBitmap = rememberAsyncCachedImageBitmap(imagePath, maxSizePx = 1280)
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
@@ -305,7 +300,7 @@ fun FullScreenDiagramDialog(
         ) {
             if (fullBitmap != null) {
                 Image(
-                    bitmap = fullBitmap.asImageBitmap(),
+                    bitmap = fullBitmap,
                     contentDescription = "Zoomed AI Educational Diagram",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -317,6 +312,11 @@ fun FullScreenDiagramDialog(
                             translationX = offset.x,
                             translationY = offset.y
                         )
+                )
+            } else {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.Center)
                 )
             }
 

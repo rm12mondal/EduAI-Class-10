@@ -93,6 +93,8 @@ import com.example.ui.theme.SageOffline
 import com.example.ui.theme.TerracottaAccent
 import com.example.viewmodel.EduAiUiState
 import com.example.viewmodel.PendingPhotoAttachment
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
 @Composable
@@ -121,6 +123,7 @@ fun ExamScreen(
     onShowSnackbar: (String) -> Unit,
     voiceInjectedText: String? = null,
     onConsumeVoiceInjectedText: () -> Unit = {},
+    examHallRemainingSeconds: StateFlow<Long?> = remember { MutableStateFlow(null) },
     modifier: Modifier = Modifier
 ) {
     // 0 = 3-in-1 Smart Exam Chat, 1 = Offline 252+ Question Bank, 2 = Score & Progress Dashboard
@@ -253,6 +256,7 @@ fun ExamScreen(
                     onShowSnackbar = onShowSnackbar,
                     voiceInjectedText = voiceInjectedText,
                     onConsumeVoiceInjectedText = onConsumeVoiceInjectedText,
+                    examHallRemainingSeconds = examHallRemainingSeconds,
                     modifier = Modifier.weight(1f)
                 )
 

@@ -39,7 +39,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.local.ChatMessageEntity
+import com.example.model.AutoStudyPlan
 import com.example.model.DateStudyDateUtils
 import com.example.model.DateStudyHistoryLogItem
 import com.example.model.DateStudyHubUiState
@@ -62,6 +67,7 @@ import com.example.model.WbbseSubject
 import com.example.ui.chat.SectionChatPanel
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
+import kotlinx.coroutines.delay
 
 /**
  * Full-Screen Auto-Paced Exam Countdown Study Workspace:
@@ -167,35 +173,13 @@ fun DateStudyHubScreen(
                     )
                 }
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.HourglassTop,
-                            contentDescription = null,
-                            tint = Color(0xFFFDE68A),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "⏳ পরীক্ষার আর ${state.daysRemaining} দিন বাকি",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.testTag("exam_countdown_banner_text")
-                        )
-                    }
-                    Text(
-                        text = "পরীক্ষা: $compactExamDate • ${state.autoPlan.labelBn}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.92f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                LiveExamCountdownHeaderBadge(
+                    examDateEpochMs = state.examDateEpochMs,
+                    compactExamDate = compactExamDate,
+                    initialDaysRemaining = state.daysRemaining,
+                    initialAutoPlan = state.autoPlan,
+                    modifier = Modifier.weight(1f)
+                )
 
                 // Online/Offline quick toggle pill
                 val isOnline = inferenceMode == InferenceMode.ONLINE
@@ -488,6 +472,66 @@ fun DateStudyHubScreen(
                 onOpenChangeDate()
             },
             onDismiss = { onSetHistoryVisible(false) }
+        )
+    }
+}
+
+/**
+ * Isolated lightweight composable scope for the live exam countdown banner.
+ * Checks for midnight/day rollover locally every 60 seconds without recomposing
+ * the surrounding workspace or SectionChatPanel.
+ */
+@Composable
+private fun LiveExamCountdownHeaderBadge(
+    examDateEpochMs: Long,
+    compactExamDate: String,
+    initialDaysRemaining: Int,
+    initialAutoPlan: AutoStudyPlan,
+    modifier: Modifier = Modifier
+) {
+    var liveDays by remember(examDateEpochMs, initialDaysRemaining) {
+        mutableIntStateOf(initialDaysRemaining)
+    }
+    LaunchedEffect(examDateEpochMs) {
+        while (true) {
+            delay(60_000L)
+            val recomputed = DateStudyDateUtils.computeDaysRemaining(examDateEpochMs)
+            if (recomputed != liveDays) {
+                liveDays = recomputed
+            }
+        }
+    }
+    val resolvedPlan = remember(liveDays, initialAutoPlan) {
+        if (liveDays == initialDaysRemaining) initialAutoPlan else AutoStudyPlan.fromDaysRemaining(liveDays)
+    }
+
+    Column(modifier = modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.HourglassTop,
+                contentDescription = null,
+                tint = Color(0xFFFDE68A),
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "⏳ পরীক্ষার আর $liveDays দিন বাকি",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("exam_countdown_banner_text")
+            )
+        }
+        Text(
+            text = "পরীক্ষা: $compactExamDate • ${resolvedPlan.labelBn}",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.92f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

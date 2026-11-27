@@ -84,6 +84,7 @@ import com.example.model.SectionChatUiState
 import com.example.model.WbbseSubject
 import com.example.ui.branding.BrandedAiAssistantAvatar
 import com.example.ui.branding.LocalAppBranding
+import com.example.ui.common.rememberAsyncCachedImageBitmap
 import com.example.ui.master.WbbseReferenceBadgeChip
 import com.example.ui.theme.OnlineCobalt
 import com.example.ui.theme.SageOffline
@@ -388,7 +389,7 @@ fun SectionChatPanel(
                         }
                     }
 
-                    items(starterPrompts) { prompt ->
+                    items(starterPrompts, key = { it }) { prompt ->
                         Surface(
                             onClick = { onSendMessage(prompt) },
                             shape = RoundedCornerShape(14.dp),
@@ -761,10 +762,10 @@ private fun SectionChatBubble(
                 }
 
                 message.imagePath?.let { path ->
-                    val bmp = remember(path) { NotebookImageHelper.decodeFileThumbnail(path, maxSizePx = 720) }
+                    val bmp = rememberAsyncCachedImageBitmap(path, maxSizePx = 480)
                     if (bmp != null) {
                         Image(
-                            bitmap = bmp.asImageBitmap(),
+                            bitmap = bmp,
                             contentDescription = "Attached photo",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

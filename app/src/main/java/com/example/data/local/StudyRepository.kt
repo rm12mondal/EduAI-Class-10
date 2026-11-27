@@ -1,7 +1,9 @@
 package com.example.data.local
 
 import com.example.model.ChatSection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 class StudyRepository(
     private val masterDataDao: MasterDataDao,
@@ -24,7 +26,7 @@ class StudyRepository(
     val allSpacedRevisions: Flow<List<SpacedRevisionEntity>> =
         masterUpgradeDao.observeAllRevisions()
 
-    suspend fun ensureSeeded() {
+    suspend fun ensureSeeded() = withContext(Dispatchers.IO) {
         val targetRecords = WbbseMasterDataSeed.createInitialRecords()
         val existingBuiltInCount = masterDataDao.countBuiltIn()
         if (existingBuiltInCount != targetRecords.size) {

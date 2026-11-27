@@ -114,6 +114,7 @@ import com.example.model.WbbseSubject
 import com.example.ui.branding.BrandedAiAssistantAvatar
 import com.example.ui.branding.BrandedAppLogoAvatar
 import com.example.ui.branding.LocalAppBranding
+import com.example.ui.common.rememberAsyncCachedImageBitmap
 import com.example.ui.extras.DailyStudyPlannerCard
 import com.example.ui.master.ScorePredictorCard
 import com.example.ui.master.TodayRevisionCapsuleCard
@@ -1093,7 +1094,7 @@ private fun ChatWelcomeState(
             )
         }
 
-        items(starterPrompts) { prompt ->
+        items(starterPrompts, key = { it }) { prompt ->
             Surface(
                 onClick = { onQuickPromptClick(prompt) },
                 shape = RoundedCornerShape(16.dp),
@@ -1138,9 +1139,10 @@ private fun ChatBubbleItem(
     val isUser = message.role == "user"
     val subject = WbbseSubject.fromId(message.subjectId)
     val isOnlineMsg = message.mode == InferenceMode.ONLINE.storageValue
-    val attachedBitmap = remember(message.imagePath, isUser) {
-        if (isUser) message.imagePath?.let { NotebookImageHelper.decodeFileThumbnail(it) } else null
-    }
+    val attachedBitmap = rememberAsyncCachedImageBitmap(
+        path = if (isUser) message.imagePath else null,
+        maxSizePx = 480
+    )
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1252,7 +1254,7 @@ private fun ChatBubbleItem(
 
                 if (isUser && attachedBitmap != null) {
                     Image(
-                        bitmap = attachedBitmap.asImageBitmap(),
+                        bitmap = attachedBitmap,
                         contentDescription = "Uploaded handwritten notebook photo",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

@@ -82,13 +82,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -152,7 +151,6 @@ fun FloatingDActionHub(
     val density = LocalDensity.current
 
     var isMenuOpen by remember { mutableStateOf(false) }
-    var isDragging by remember { mutableStateOf(false) }
 
     // Runtime RECORD_AUDIO permission launcher for Voice Input
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
@@ -198,19 +196,6 @@ fun FloatingDActionHub(
         onTogglePodcastPlayPause()
     }
 
-    // Subtle breathing pulse when Mic is listening or Podcast is playing
-    val isLiveActivity = speechState.isListening || podcastState.isPlaying
-    val pulseTransition = rememberInfiniteTransition(label = "d_hub_pulse")
-    val pulseScale by pulseTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isLiveActivity) 1.12f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 800),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_scale"
-    )
-
     BoxWithConstraints(
         modifier = modifier.fillMaxSize()
     ) {
@@ -226,36 +211,6 @@ fun FloatingDActionHub(
         val topMinY = with(density) { topSafeDp.toPx() }
         val bottomMaxY = (maxHpx - fabPx - with(density) { bottomSafeDp.toPx() }).coerceAtLeast(topMinY)
         val rightMaxX = (maxWpx - fabPx - padPx).coerceAtLeast(padPx)
-
-        // Default resting anchor: right edge, comfortably above the bottom composer / nav bar
-        var targetOffset by remember { mutableStateOf<Offset?>(null) }
-        val resolvedTarget = targetOffset ?: Offset(
-            x = rightMaxX,
-            y = (bottomMaxY * 0.72f).coerceIn(topMinY, bottomMaxY)
-        )
-
-        // Clamp when screen rotates / resizes
-        LaunchedEffect(rightMaxX, bottomMaxY) {
-            targetOffset?.let { current ->
-                targetOffset = Offset(
-                    x = current.x.coerceIn(padPx, rightMaxX),
-                    y = current.y.coerceIn(topMinY, bottomMaxY)
-                )
-            }
-        }
-
-        val animatedOffset by animateOffsetAsState(
-            targetValue = resolvedTarget,
-            animationSpec = if (isDragging) {
-                spring(stiffness = Spring.StiffnessHigh)
-            } else {
-                spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            },
-            label = "d_fab_snap_offset"
-        )
 
         // 1. Scrim + Compact Popup Menu when open
         AnimatedVisibility(
@@ -345,153 +300,242 @@ fun FloatingDActionHub(
             }
         }
 
-        // 2. Draggable AssistiveTouch-Style Circular "D" Floating Button
-        val activeRingColor = when {
-            speechState.isListening -> Color(0xFFDC2626)
-            podcastState.isPlaying -> SageOffline
-            exactTextbookMode -> Color(0xFFD97706)
-            else -> OnlineCobalt
-        }
+        // 2. Isolated Draggable AssistiveTouch-Style Circular "D" Floating Button
+        DraggableFloatingDOrb(
+            fabSizeDp = fabSizeDp,
+            padPx = padPx,
+            rightMaxX = rightMaxX,
+            topMinY = topMinY,
+            bottomMaxY = bottomMaxY,
+            isListening = speechState.isListening,
+            isPodcastPlaying = podcastState.isPlaying,
+            exactTextbookMode = exactTextbookMode,
+            isMenuOpen = isMenuOpen,
+            onToggleMenu = { isMenuOpen = !isMenuOpen }
+        )
+    }
+}
 
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        x = animatedOffset.x.roundToInt(),
-                        y = animatedOffset.y.roundToInt()
-                    )
-                }
-                .size(fabSizeDp)
-                .scale(if (isDragging) 1.08f else pulseScale)
-                .alpha(if (isDragging || isMenuOpen || isLiveActivity) 1f else 0.90f)
-                .pointerInput(rightMaxX, topMinY, bottomMaxY) {
-                    detectDragGestures(
-                        onDragStart = {
-                            isDragging = true
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            val cur = targetOffset ?: resolvedTarget
-                            // Snap cleanly to the nearest screen edge (left, right, top, or bottom)
-                            val distLeft = cur.x - padPx
-                            val distRight = rightMaxX - cur.x
-                            val distTop = cur.y - topMinY
-                            val distBottom = bottomMaxY - cur.y
-                            val minEdge = minOf(distLeft, distRight, distTop, distBottom)
+/**
+ * Independent lightweight composable scope for the draggable floating "D" orb.
+ * Isolates drag offsets, spring snap animations, and live pulse transitions so
+ * dragging or pulsing never triggers recomposition of the popup menu or parent UI.
+ */
+@Composable
+private fun DraggableFloatingDOrb(
+    fabSizeDp: androidx.compose.ui.unit.Dp,
+    padPx: Float,
+    rightMaxX: Float,
+    topMinY: Float,
+    bottomMaxY: Float,
+    isListening: Boolean,
+    isPodcastPlaying: Boolean,
+    exactTextbookMode: Boolean,
+    isMenuOpen: Boolean,
+    onToggleMenu: () -> Unit
+) {
+    var isDragging by remember { mutableStateOf(false) }
+    var targetOffset by remember { mutableStateOf<Offset?>(null) }
+    val resolvedTarget = targetOffset ?: Offset(
+        x = rightMaxX,
+        y = (bottomMaxY * 0.72f).coerceIn(topMinY, bottomMaxY)
+    )
 
-                            val snapped = when {
-                                minEdge == distTop && distTop < 72f -> Offset(
-                                    x = cur.x.coerceIn(padPx, rightMaxX),
-                                    y = topMinY
-                                )
-                                minEdge == distBottom && distBottom < 72f -> Offset(
-                                    x = cur.x.coerceIn(padPx, rightMaxX),
-                                    y = bottomMaxY
-                                )
-                                distLeft <= distRight -> Offset(
-                                    x = padPx,
-                                    y = cur.y.coerceIn(topMinY, bottomMaxY)
-                                )
-                                else -> Offset(
-                                    x = rightMaxX,
-                                    y = cur.y.coerceIn(topMinY, bottomMaxY)
-                                )
-                            }
-                            targetOffset = snapped
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                        },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            val current = targetOffset ?: resolvedTarget
-                            targetOffset = Offset(
-                                x = (current.x + dragAmount.x).coerceIn(padPx, rightMaxX),
-                                y = (current.y + dragAmount.y).coerceIn(topMinY, bottomMaxY)
-                            )
-                        }
-                    )
-                }
-                .shadow(elevation = 10.dp, shape = CircleShape, clip = false)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF0F172A),
-                            activeRingColor
-                        )
-                    )
-                )
-                .clickable { isMenuOpen = !isMenuOpen }
-                .testTag("floating_d_hub_button"),
-            contentAlignment = Alignment.Center
-        ) {
-            // Sleek inner glass ring (AssistiveTouch aesthetic) — shows Custom Gallery Logo when set
-            val dBranding = LocalAppBranding.current
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                val customLogoBmp = dBranding.customLogoBitmap
-                if (customLogoBmp != null) {
-                    Image(
-                        bitmap = customLogoBmp,
-                        contentDescription = dBranding.effectiveTitle,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        Color.White.copy(alpha = 0.28f),
-                                        activeRingColor.copy(alpha = 0.85f)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "D",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 21.sp,
-                                letterSpacing = 0.5.sp
-                            ),
-                            color = Color.White
-                        )
-                    }
-                }
-            }
-
-            // Tiny live dot badge when Voice or Podcast is active
-            if (isLiveActivity || exactTextbookMode) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(11.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                speechState.isListening -> Color(0xFFEF4444)
-                                podcastState.isPlaying -> Color(0xFF22C55E)
-                                else -> Color(0xFFF59E0B)
-                            }
-                        )
-                )
-            }
+    // Clamp cleanly when screen rotates / resizes
+    LaunchedEffect(rightMaxX, bottomMaxY) {
+        targetOffset?.let { current ->
+            targetOffset = Offset(
+                x = current.x.coerceIn(padPx, rightMaxX),
+                y = current.y.coerceIn(topMinY, bottomMaxY)
+            )
         }
     }
+
+    val animatedOffset by animateOffsetAsState(
+        targetValue = resolvedTarget,
+        animationSpec = if (isDragging) {
+            spring(stiffness = Spring.StiffnessHigh)
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        },
+        label = "d_fab_snap_offset"
+    )
+
+    val isLiveActivity = isListening || isPodcastPlaying
+    val pulseScale = rememberLivePulseScale(isLiveActivity = isLiveActivity)
+
+    val activeRingColor = when {
+        isListening -> Color(0xFFDC2626)
+        isPodcastPlaying -> SageOffline
+        exactTextbookMode -> Color(0xFFD97706)
+        else -> OnlineCobalt
+    }
+
+    Box(
+        modifier = Modifier
+            .offset {
+                IntOffset(
+                    x = animatedOffset.x.roundToInt(),
+                    y = animatedOffset.y.roundToInt()
+                )
+            }
+            .size(fabSizeDp)
+            .graphicsLayer {
+                val scale = if (isDragging) 1.08f else pulseScale
+                scaleX = scale
+                scaleY = scale
+                alpha = if (isDragging || isMenuOpen || isLiveActivity) 1f else 0.90f
+            }
+            .pointerInput(rightMaxX, topMinY, bottomMaxY) {
+                detectDragGestures(
+                    onDragStart = {
+                        isDragging = true
+                    },
+                    onDragEnd = {
+                        isDragging = false
+                        val cur = targetOffset ?: resolvedTarget
+                        // Snap cleanly to the nearest screen edge (left, right, top, or bottom)
+                        val distLeft = cur.x - padPx
+                        val distRight = rightMaxX - cur.x
+                        val distTop = cur.y - topMinY
+                        val distBottom = bottomMaxY - cur.y
+                        val minEdge = minOf(distLeft, distRight, distTop, distBottom)
+
+                        val snapped = when {
+                            minEdge == distTop && distTop < 72f -> Offset(
+                                x = cur.x.coerceIn(padPx, rightMaxX),
+                                y = topMinY
+                            )
+                            minEdge == distBottom && distBottom < 72f -> Offset(
+                                x = cur.x.coerceIn(padPx, rightMaxX),
+                                y = bottomMaxY
+                            )
+                            distLeft <= distRight -> Offset(
+                                x = padPx,
+                                y = cur.y.coerceIn(topMinY, bottomMaxY)
+                            )
+                            else -> Offset(
+                                x = rightMaxX,
+                                y = cur.y.coerceIn(topMinY, bottomMaxY)
+                            )
+                        }
+                        targetOffset = snapped
+                    },
+                    onDragCancel = {
+                        isDragging = false
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        val current = targetOffset ?: resolvedTarget
+                        targetOffset = Offset(
+                            x = (current.x + dragAmount.x).coerceIn(padPx, rightMaxX),
+                            y = (current.y + dragAmount.y).coerceIn(topMinY, bottomMaxY)
+                        )
+                    }
+                )
+            }
+            .shadow(elevation = 10.dp, shape = CircleShape, clip = false)
+            .clip(CircleShape)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        Color(0xFF0F172A),
+                        activeRingColor
+                    )
+                )
+            )
+            .clickable(onClick = onToggleMenu)
+            .testTag("floating_d_hub_button"),
+        contentAlignment = Alignment.Center
+    ) {
+        // Sleek inner glass ring (AssistiveTouch aesthetic) — shows Custom Gallery Logo when set
+        val dBranding = LocalAppBranding.current
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            val customLogoBmp = dBranding.customLogoBitmap
+            if (customLogoBmp != null) {
+                Image(
+                    bitmap = customLogoBmp,
+                    contentDescription = dBranding.effectiveTitle,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.28f),
+                                    activeRingColor.copy(alpha = 0.85f)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "D",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 21.sp,
+                            letterSpacing = 0.5.sp
+                        ),
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // Tiny live dot badge when Voice or Podcast is active
+        if (isLiveActivity || exactTextbookMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(11.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when {
+                            isListening -> Color(0xFFEF4444)
+                            isPodcastPlaying -> Color(0xFF22C55E)
+                            else -> Color(0xFFF59E0B)
+                        }
+                    )
+            )
+        }
+    }
+}
+
+/**
+ * Only runs an infinite pulse animation when voice recording or podcast audio is actively running.
+ * Schedules 0 animation frames when idle to eliminate background recomposition overhead.
+ */
+@Composable
+private fun rememberLivePulseScale(isLiveActivity: Boolean): Float {
+    if (!isLiveActivity) return 1f
+    val pulseTransition = rememberInfiniteTransition(label = "d_hub_pulse")
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_scale"
+    )
+    return pulseScale
 }
 
 @Composable

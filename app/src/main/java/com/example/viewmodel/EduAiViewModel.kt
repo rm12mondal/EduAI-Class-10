@@ -95,12 +95,14 @@ import com.example.model.WritingFormatType
 import com.example.model.WritingLanguage
 import com.example.model.WritingStudioUiState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -395,6 +397,8 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     private var generationJob: Job? = null
     private var examChatJob: Job? = null
     private var examHallTimerJob: Job? = null
+    private val _examHallRemainingSeconds = MutableStateFlow<Long?>(null)
+    val examHallRemainingSeconds: StateFlow<Long?> = _examHallRemainingSeconds.asStateFlow()
     private var nextExamChatMsgId: Long = 10_000L
 
     private val coreDataFlow = combine(
@@ -458,7 +462,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             studyRepository.ensureSeeded()
             reloadPersistedExamChatFromRoom()
             val allNotesSnapshot = studyRepository.getMasterDataSnapshot(null)
@@ -880,11 +884,15 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleExamSessionPause() {
+        val currentRemaining = _examHallRemainingSeconds.value
         localState.update { state ->
             val session = state.examChat.activeSession ?: return@update state
             state.copy(
                 examChat = state.examChat.copy(
-                    activeSession = session.copy(isPaused = !session.isPaused)
+                    activeSession = session.copy(
+                        isPaused = !session.isPaused,
+                        remainingSeconds = currentRemaining ?: session.remainingSeconds
+                    )
                 )
             )
         }
@@ -892,6 +900,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
     fun endExamSession() {
         examHallTimerJob?.cancel()
+        _examHallRemainingSeconds.value = null
         localState.update { state ->
             state.copy(examChat = state.examChat.copy(activeSession = null))
         }
@@ -901,6 +910,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
         ttsManager.stop()
         examChatJob?.cancel()
         examHallTimerJob?.cancel()
+        _examHallRemainingSeconds.value = null
         viewModelScope.launch {
             studyRepository.clearSectionChat(ChatSection.MOCK_EXAM)
             localState.update { state ->
@@ -961,6 +971,7 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
         if (isStartingNewNormal) {
             examHallTimerJob?.cancel()
+            _examHallRemainingSeconds.value = null
             val session = ActiveExamSession(
                 mode = ExamSessionMode.NORMAL_UNTIMED,
                 subject = resolvedSubject,
@@ -1170,26 +1181,32 @@ class EduAiViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startExamHallCountdown(session: ActiveExamSession) {
         examHallTimerJob?.cancel()
+        _examHallRemainingSeconds.value = session.remainingSeconds
         localState.update { it.copy(examChat = it.examChat.copy(activeSession = session)) }
         examHallTimerJob = viewModelScope.launch {
+            var remaining = session.remainingSeconds
             while (true) {
                 delay(1_000L)
                 val active = localState.value.examChat.activeSession ?: break
                 if (active.mode != ExamSessionMode.MADHYAMIK_TIMED) break
                 if (active.isPaused || active.isTimeUp) continue
 
-                val nextSec = (active.remainingSeconds - 1L).coerceAtLeast(0L)
-                localState.update { state ->
-                    state.copy(
-                        examChat = state.examChat.copy(
-                            activeSession = active.copy(
-                                remainingSeconds = nextSec,
-                                isTimeUp = nextSec == 0L
+                remaining = (remaining - 1L).coerceAtLeast(0L)
+                // Emit to isolated countdown flow so 1-second ticks never recompose the root UI tree
+                _examHallRemainingSeconds.value = remaining
+                if (remaining == 0L) {
+                    localState.update { state ->
+                        state.copy(
+                            examChat = state.examChat.copy(
+                                activeSession = active.copy(
+                                    remainingSeconds = 0L,
+                                    isTimeUp = true
+                                )
                             )
                         )
-                    )
+                    }
+                    break
                 }
-                if (nextSec == 0L) break
             }
         }
     }

@@ -34,6 +34,15 @@ object AppBrandingManager {
     private const val LOGO_TARGET_PX = 512
     const val MAX_CUSTOM_TITLE_LENGTH = 30
 
+    @Volatile
+    private var cachedLogoPath: String? = null
+
+    @Volatile
+    private var cachedLogoMtime: Long = -1L
+
+    @Volatile
+    private var cachedLogoBitmap: Bitmap? = null
+
     /**
      * Switches the active Home Screen launcher alias safely:
      * enables the chosen alias FIRST before disabling the remaining 4 aliases,
@@ -113,7 +122,10 @@ object AppBrandingManager {
                 FileOutputStream(outFile).use { fos ->
                     square.compress(Bitmap.CompressFormat.JPEG, 86, fos)
                 }
-                square.recycle()
+                // Warm in-memory cache immediately with the saved bitmap (no extra disk read needed)
+                cachedLogoPath = outFile.absolutePath
+                cachedLogoMtime = outFile.lastModified()
+                cachedLogoBitmap = square
                 outFile.absolutePath
             } catch (e: Exception) {
                 Log.e(TAG, "Failed saving custom gallery logo", e)
@@ -123,6 +135,9 @@ object AppBrandingManager {
 
     suspend fun deleteCustomGalleryLogo(context: Context): Boolean = withContext(Dispatchers.IO) {
         try {
+            cachedLogoPath = null
+            cachedLogoMtime = -1L
+            cachedLogoBitmap = null
             val file = File(File(context.filesDir, BRANDING_DIR), CUSTOM_LOGO_FILENAME)
             if (!isConfinedToBrandingDir(context, file)) return@withContext false
             if (file.exists()) file.delete() else true
@@ -132,11 +147,52 @@ object AppBrandingManager {
         }
     }
 
+    /**
+     * Non-blocking in-memory cache read safe to call during Compose initial state setup.
+     */
+    fun getCachedCustomLogoBitmap(path: String?): Bitmap? {
+        if (path.isNullOrBlank()) return null
+        val bmp = cachedLogoBitmap
+        return if (cachedLogoPath == path && bmp != null && !bmp.isRecycled) bmp else null
+    }
+
+    /**
+     * Asynchronously decodes the custom gallery logo on `Dispatchers.IO` with in-memory caching.
+     */
+    suspend fun decodeCustomLogoBitmapAsync(path: String?): Bitmap? {
+        if (path.isNullOrBlank()) return null
+        getCachedCustomLogoBitmap(path)?.let { return it }
+        return withContext(Dispatchers.IO) {
+            decodeCustomLogoBitmap(path)
+        }
+    }
+
     fun decodeCustomLogoBitmap(path: String?): Bitmap? {
         if (path.isNullOrBlank()) return null
         val file = File(path)
         if (!file.exists()) return null
-        return runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+        val mtime = file.lastModified()
+        val existing = cachedLogoBitmap
+        if (cachedLogoPath == path && cachedLogoMtime == mtime && existing != null && !existing.isRecycled) {
+            return existing
+        }
+        val decoded = runCatching {
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, opts)
+            val longest = maxOf(opts.outWidth, opts.outHeight)
+            var sample = 1
+            while (longest / (sample * 2) >= LOGO_TARGET_PX) sample *= 2
+            BitmapFactory.decodeFile(
+                file.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            )
+        }.getOrNull()
+        if (decoded != null) {
+            cachedLogoPath = path
+            cachedLogoMtime = mtime
+            cachedLogoBitmap = decoded
+        }
+        return decoded
     }
 
     fun sanitizeCustomTitle(raw: String): String {
@@ -151,6 +207,50 @@ object AppBrandingManager {
      * Updates the Android Recent Apps task switcher card label and icon dynamically
      * (`ActivityManager.TaskDescription`) so zero default branding remains visible.
      */
+    /**
+     * Async-safe Recent Apps TaskDescription updater: decodes logo/icon strictly on `Dispatchers.IO`
+     * and applies `Activity.setTaskDescription` on the Main thread.
+     */
+    @Suppress("DEPRECATION")
+    suspend fun applyTaskDescriptionAsync(
+        activity: Activity,
+        effectiveTitle: String,
+        customLogoPath: String?,
+        preset: LauncherDisguisePreset
+    ) {
+        val safeTitle = effectiveTitle.trim().ifBlank { preset.launcherLabel }
+        val (customBmp, iconBmp) = withContext(Dispatchers.IO) {
+            val c = decodeCustomLogoBitmap(customLogoPath)
+            val i = c ?: renderPresetIconBitmap(activity.applicationContext, preset)
+            c to i
+        }
+        withContext(Dispatchers.Main) {
+            try {
+                if (activity.isFinishing || activity.isDestroyed) return@withContext
+                val taskDesc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val builder = ActivityManager.TaskDescription.Builder()
+                        .setLabel(safeTitle)
+                    if (customBmp == null && preset.iconDrawableRes != null) {
+                        builder.setIcon(preset.iconDrawableRes)
+                    }
+                    builder.build()
+                } else {
+                    ActivityManager.TaskDescription(safeTitle, iconBmp)
+                }
+                activity.setTaskDescription(taskDesc)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
+                    iconBmp != null
+                ) {
+                    activity.setTaskDescription(ActivityManager.TaskDescription(safeTitle, iconBmp))
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "TaskDescription update skipped: ${e.localizedMessage}")
+            }
+        }
+    }
+
     @Suppress("DEPRECATION")
     fun applyTaskDescription(
         activity: Activity,
@@ -160,7 +260,7 @@ object AppBrandingManager {
     ) {
         try {
             val safeTitle = effectiveTitle.trim().ifBlank { preset.launcherLabel }
-            val customBmp = decodeCustomLogoBitmap(customLogoPath)
+            val customBmp = getCachedCustomLogoBitmap(customLogoPath)
             val iconBmp = customBmp ?: renderPresetIconBitmap(activity, preset)
 
             val taskDesc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -174,14 +274,6 @@ object AppBrandingManager {
                 ActivityManager.TaskDescription(safeTitle, iconBmp)
             }
             activity.setTaskDescription(taskDesc)
-
-            // On API 33+ when custom gallery logo exists, also apply bitmap overload if supported
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
-                iconBmp != null
-            ) {
-                activity.setTaskDescription(ActivityManager.TaskDescription(safeTitle, iconBmp))
-            }
         } catch (e: Exception) {
             Log.w(TAG, "TaskDescription update skipped: ${e.localizedMessage}")
         }

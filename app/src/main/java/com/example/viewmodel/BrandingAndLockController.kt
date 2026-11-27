@@ -11,11 +11,13 @@ import com.example.model.AppBrandingUiState
 import com.example.model.AppLockUiState
 import com.example.model.LauncherDisguisePreset
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Coordinates:
@@ -30,41 +32,59 @@ class BrandingAndLockController(
 ) {
     private val lockStorage = AppLockSecureStorage(appContext)
 
-    private val _brandingState = MutableStateFlow(
-        AppBrandingUiState(
-            activeDisguisePreset = AppBrandingManager.detectActiveLauncherPreset(appContext)
-        )
-    )
+    private val _brandingState = MutableStateFlow(AppBrandingUiState())
     val brandingState: StateFlow<AppBrandingUiState> = _brandingState.asStateFlow()
 
-    private val initialLockSnapshot = lockStorage.readSnapshot()
-    private val _appLockState = MutableStateFlow(
-        AppLockUiState(
-            isLockEnabled = initialLockSnapshot.isLockEnabled,
-            hasPinConfigured = initialLockSnapshot.hasPinConfigured,
-            isBiometricEnabled = initialLockSnapshot.isBiometricEnabled,
-            isBiometricHardwareAvailable = BiometricUnlockHelper.isBiometricAvailable(appContext),
-            // Immediately locked on cold start if App Lock is enabled — zero content flash!
-            isLocked = initialLockSnapshot.isLockEnabled,
-            failedAttempts = initialLockSnapshot.failedAttempts,
-            lockoutUntilEpochMs = initialLockSnapshot.lockoutUntilEpochMs
-        )
-    )
+    private val _appLockState = MutableStateFlow(AppLockUiState())
     val appLockState: StateFlow<AppLockUiState> = _appLockState.asStateFlow()
 
-    // Prevents locking on the very first ON_START after Activity creation (already handled above)
+    // Prevents locking on the very first ON_START after Activity creation
     // or right when returning from an in-app system photo/file picker.
     private var hasHandledInitialStart = false
     private var suppressNextStartLockOnce = false
 
+    @Volatile
+    private var hasCompletedInitialLockWarmup = false
+
     init {
+        // Warm EncryptedSharedPreferences, Biometric hardware status, and Launcher alias strictly on Dispatchers.IO
+        scope.launch(Dispatchers.IO) {
+            val snap = lockStorage.readSnapshotAsync()
+            val bioAvailable = BiometricUnlockHelper.isBiometricAvailable(appContext)
+            val detectedPreset = AppBrandingManager.detectActiveLauncherPreset(appContext)
+            hasCompletedInitialLockWarmup = true
+            _appLockState.update { current ->
+                current.copy(
+                    isLockEnabled = snap.isLockEnabled,
+                    hasPinConfigured = snap.hasPinConfigured,
+                    isBiometricEnabled = snap.isBiometricEnabled,
+                    isBiometricHardwareAvailable = bioAvailable,
+                    isLocked = snap.isLockEnabled,
+                    failedAttempts = snap.failedAttempts,
+                    lockoutUntilEpochMs = snap.lockoutUntilEpochMs
+                )
+            }
+            _brandingState.update { current ->
+                if (current.activeDisguisePreset == LauncherDisguisePreset.DEFAULT_EDUAI && detectedPreset != LauncherDisguisePreset.DEFAULT_EDUAI) {
+                    current.copy(activeDisguisePreset = detectedPreset)
+                } else {
+                    current
+                }
+            }
+        }
+
         scope.launch {
             settingsDataStore.settingsFlow.collect { stored ->
-                val detectedPreset = AppBrandingManager.detectActiveLauncherPreset(appContext)
-                val resolvedPreset = if (stored.launcherDisguiseId.isNotBlank()) {
-                    LauncherDisguisePreset.fromId(stored.launcherDisguiseId)
-                } else {
-                    detectedPreset
+                val resolvedPreset = withContext(Dispatchers.IO) {
+                    // Warm custom logo cache on IO before exposing path to Compose
+                    if (!stored.customLogoPath.isNullOrBlank()) {
+                        AppBrandingManager.decodeCustomLogoBitmap(stored.customLogoPath)
+                    }
+                    if (stored.launcherDisguiseId.isNotBlank()) {
+                        LauncherDisguisePreset.fromId(stored.launcherDisguiseId)
+                    } else {
+                        AppBrandingManager.detectActiveLauncherPreset(appContext)
+                    }
                 }
                 _brandingState.update { current ->
                     current.copy(
@@ -81,7 +101,9 @@ class BrandingAndLockController(
 
     fun selectLauncherDisguise(preset: LauncherDisguisePreset) {
         scope.launch {
-            val ok = AppBrandingManager.switchLauncherAlias(appContext, preset)
+            val ok = withContext(Dispatchers.IO) {
+                AppBrandingManager.switchLauncherAlias(appContext, preset)
+            }
             if (ok) {
                 settingsDataStore.setLauncherDisguiseId(preset.id)
                 _brandingState.update {
@@ -170,8 +192,10 @@ class BrandingAndLockController(
     // ==================== 3. Strict App Lock (4-Digit PIN + Biometric) ====================
 
     fun refreshBiometricAvailability() {
-        val available = BiometricUnlockHelper.isBiometricAvailable(appContext)
-        _appLockState.update { it.copy(isBiometricHardwareAvailable = available) }
+        scope.launch(Dispatchers.IO) {
+            val available = BiometricUnlockHelper.isBiometricAvailable(appContext)
+            _appLockState.update { it.copy(isBiometricHardwareAvailable = available) }
+        }
     }
 
     fun enableOrUpdatePin(newPin: String, enableBiometric: Boolean): Boolean {
@@ -181,41 +205,46 @@ class BrandingAndLockController(
             }
             return false
         }
-        val canUseBio = enableBiometric && BiometricUnlockHelper.isBiometricAvailable(appContext)
-        val saved = lockStorage.savePinAndEnable(newPin, canUseBio)
-        if (saved) {
-            val snap = lockStorage.readSnapshot()
-            _appLockState.update {
-                it.copy(
-                    isLockEnabled = snap.isLockEnabled,
-                    hasPinConfigured = snap.hasPinConfigured,
-                    isBiometricEnabled = snap.isBiometricEnabled,
-                    isBiometricHardwareAvailable = BiometricUnlockHelper.isBiometricAvailable(appContext),
-                    isLocked = false,
-                    failedAttempts = 0,
-                    lockoutUntilEpochMs = 0L,
-                    errorMessage = null,
-                    statusMessage = "🔒 ৪-ডিজিট PIN অ্যাপ লক সফলভাবে চালু ও এনক্রিপ্টেড স্টোরেজে সেভ হয়েছে!"
-                )
+        scope.launch(Dispatchers.IO) {
+            val bioAvailable = BiometricUnlockHelper.isBiometricAvailable(appContext)
+            val canUseBio = enableBiometric && bioAvailable
+            val saved = lockStorage.savePinAndEnable(newPin, canUseBio)
+            if (saved) {
+                val snap = lockStorage.readSnapshot()
+                _appLockState.update {
+                    it.copy(
+                        isLockEnabled = snap.isLockEnabled,
+                        hasPinConfigured = snap.hasPinConfigured,
+                        isBiometricEnabled = snap.isBiometricEnabled,
+                        isBiometricHardwareAvailable = bioAvailable,
+                        isLocked = false,
+                        failedAttempts = 0,
+                        lockoutUntilEpochMs = 0L,
+                        errorMessage = null,
+                        statusMessage = "🔒 ৪-ডিজিট PIN অ্যাপ লক সফলভাবে চালু ও এনক্রিপ্টেড স্টোরেজে সেভ হয়েছে!"
+                    )
+                }
             }
         }
-        return saved
+        return true
     }
 
     fun enableExistingPinLock(): Boolean {
-        val ok = lockStorage.enableLockIfPinExists()
-        if (ok) {
-            val snap = lockStorage.readSnapshot()
-            _appLockState.update {
-                it.copy(
-                    isLockEnabled = snap.isLockEnabled,
-                    hasPinConfigured = snap.hasPinConfigured,
-                    isBiometricEnabled = snap.isBiometricEnabled,
-                    statusMessage = "🔒 অ্যাপ লক পুনরায় চালু হয়েছে!"
-                )
+        scope.launch(Dispatchers.IO) {
+            val ok = lockStorage.enableLockIfPinExists()
+            if (ok) {
+                val snap = lockStorage.readSnapshot()
+                _appLockState.update {
+                    it.copy(
+                        isLockEnabled = snap.isLockEnabled,
+                        hasPinConfigured = snap.hasPinConfigured,
+                        isBiometricEnabled = snap.isBiometricEnabled,
+                        statusMessage = "🔒 অ্যাপ লক পুনরায় চালু হয়েছে!"
+                    )
+                }
             }
         }
-        return ok
+        return true
     }
 
     fun disableAppLockWithPinVerification(currentPin: String): Boolean {
@@ -259,33 +288,35 @@ class BrandingAndLockController(
     }
 
     fun setBiometricUnlockEnabled(enabled: Boolean) {
-        val available = BiometricUnlockHelper.isBiometricAvailable(appContext)
-        if (enabled && !available) {
+        scope.launch(Dispatchers.IO) {
+            val available = BiometricUnlockHelper.isBiometricAvailable(appContext)
+            if (enabled && !available) {
+                _appLockState.update {
+                    it.copy(
+                        isBiometricHardwareAvailable = false,
+                        statusMessage = "এই ফোনে ফিঙ্গারপ্রিন্ট বা ফেস লক সেটআপ করা নেই। ফোনের Settings থেকে আগে চালু করুন।"
+                    )
+                }
+                return@launch
+            }
+            if (!_appLockState.value.isLockEnabled) {
+                _appLockState.update {
+                    it.copy(statusMessage = "আগে ৪-ডিজিট PIN দিয়ে অ্যাপ লক চালু করুন।")
+                }
+                return@launch
+            }
+            lockStorage.setBiometricEnabled(enabled)
             _appLockState.update {
                 it.copy(
-                    isBiometricHardwareAvailable = false,
-                    statusMessage = "এই ফোনে ফিঙ্গারপ্রিন্ট বা ফেস লক সেটআপ করা নেই। ফোনের Settings থেকে আগে চালু করুন।"
+                    isBiometricEnabled = enabled,
+                    isBiometricHardwareAvailable = available,
+                    statusMessage = if (enabled) {
+                        "👆 ফিঙ্গারপ্রিন্ট / বায়োমেট্রিক আনলক চালু হয়েছে!"
+                    } else {
+                        "বায়োমেট্রিক আনলক বন্ধ করা হয়েছে (এখন শুধু ৪-ডিজিট PIN লাগবে)।"
+                    }
                 )
             }
-            return
-        }
-        if (!_appLockState.value.isLockEnabled) {
-            _appLockState.update {
-                it.copy(statusMessage = "আগে ৪-ডিজিট PIN দিয়ে অ্যাপ লক চালু করুন।")
-            }
-            return
-        }
-        lockStorage.setBiometricEnabled(enabled)
-        _appLockState.update {
-            it.copy(
-                isBiometricEnabled = enabled,
-                isBiometricHardwareAvailable = available,
-                statusMessage = if (enabled) {
-                    "👆 ফিঙ্গারপ্রিন্ট / বায়োমেট্রিক আনলক চালু হয়েছে!"
-                } else {
-                    "বায়োমেট্রিক আনলক বন্ধ করা হয়েছে (এখন শুধু ৪-ডিজিট PIN লাগবে)।"
-                }
-            )
         }
     }
 
