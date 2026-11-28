@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout App Repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -21,150 +21,133 @@ jobs:
 
       - name: Setup Android SDK & NDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'ndk;26.1.10909125 cmake;3.22.1'
 
-      - name: Build Native libllama_jni.so for arm64-v8a
+      - name: Install Android NDK (r26d) & CMake
         run: |
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
-          mkdir -p /tmp/jni_build && cd /tmp/jni_build
+          sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1"
 
-          cat << 'EOF' > llama_jni.cpp
+      - name: Auto-Detect Package & Generate llama_jni.cpp + Compile Native Engine
+        run: |
+          # Detect existing LlamaJniBridge package name automatically
+          BRIDGE_FILE=$(find app/src/main -name "*Llama*Bridge*.kt" -o -name "*Llama*Bridge*.java" | head -n 1)
+          if [ -n "$BRIDGE_FILE" ]; then
+            PKG_NAME=$(grep -E "^package " "$BRIDGE_FILE" | awk '{print $2}' | tr -d ';' | tr '.' '_')
+            CLASS_NAME=$(basename "$BRIDGE_FILE" | sed 's/\.[^.]*$//')
+          else
+            PKG_NAME="com_aistudio_eduaiclass10_wbkxqm"
+            CLASS_NAME="LlamaJniBridge"
+          fi
+          JNI_PREFIX="Java_${PKG_NAME}_${CLASS_NAME}"
+          echo "Detected JNI Prefix: $JNI_PREFIX"
+
+          # Clone & Build llama.cpp for arm64-v8a
+          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git /tmp/llama.cpp
+          mkdir -p /tmp/llama_build
+          cmake -S /tmp/llama.cpp -B /tmp/llama_build \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_CURL=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/llama_build --config Release -j$(nproc)
+
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          find /tmp/llama_build -name "*.so" -exec cp {} app/src/main/jniLibs/arm64-v8a/ \;
+
+          # Generate C++ JNI wrapper dynamically
+          cat <<EOF > /tmp/llama_jni.cpp
           #include <jni.h>
           #include <string>
           #include <vector>
-          #include <cstring>
+          #include <atomic>
           #include "llama.h"
 
-          struct LlamaContextWrapper {
-              llama_model* model = nullptr;
-              llama_context* ctx = nullptr;
-          };
+          static llama_model* g_model = nullptr;
+          static llama_context* g_ctx = nullptr;
+          static std::atomic<bool> g_stop{false};
 
-          extern "C" JNIEXPORT jlong JNICALL
-          Java_com_example_data_gguf_LlamaNativeBridge_nativeLoadModel(
-                  JNIEnv* env, jobject /* this */,
-                  jstring modelPath, jint contextLength, jint threads) {
-              const char* path = env->GetStringUTFChars(modelPath, nullptr);
+          extern "C" {
+          JNIEXPORT jboolean JNICALL ${JNI_PREFIX}_nativeLoadModel(JNIEnv* env, jobject, jstring jpath, jint n_ctx, jint n_threads) {
+              const char* path = env->GetStringUTFChars(jpath, nullptr);
               llama_backend_init();
-
               llama_model_params mparams = llama_model_default_params();
-              llama_model* model = llama_model_load_from_file(path, mparams);
-              env->ReleaseStringUTFChars(modelPath, path);
-
-              if (!model) return 0;
-
+              g_model = llama_model_load_from_file(path, mparams);
+              env->ReleaseStringUTFChars(jpath, path);
+              if (!g_model) return JNI_FALSE;
               llama_context_params cparams = llama_context_default_params();
-              cparams.n_ctx = contextLength > 0 ? contextLength : 2048;
-              cparams.n_threads = threads > 0 ? threads : 4;
-              cparams.n_threads_batch = cparams.n_threads;
-
-              llama_context* ctx = llama_init_from_model(model, cparams);
-              if (!ctx) {
-                  llama_model_free(model);
-                  return 0;
-              }
-
-              auto* wrapper = new LlamaContextWrapper{model, ctx};
-              return reinterpret_cast<jlong>(wrapper);
+              cparams.n_ctx = n_ctx > 0 ? n_ctx : 2048;
+              cparams.n_threads = n_threads > 0 ? n_threads : 4;
+              g_ctx = llama_init_from_model(g_model, cparams);
+              return g_ctx ? JNI_TRUE : JNI_FALSE;
           }
 
-          extern "C" JNIEXPORT jstring JNICALL
-          Java_com_example_data_gguf_LlamaNativeBridge_nativeGenerate(
-                  JNIEnv* env, jobject /* this */,
-                  jlong handle, jstring prompt, jint maxTokens, jfloat temperature) {
-              if (handle == 0) return env->NewStringUTF("");
-              auto* wrapper = reinterpret_cast<LlamaContextWrapper*>(handle);
-              const char* promptStr = env->GetStringUTFChars(prompt, nullptr);
-              std::string input(promptStr);
-              env->ReleaseStringUTFChars(prompt, promptStr);
-
-              const llama_vocab* vocab = llama_model_get_vocab(wrapper->model);
-              std::vector<llama_token> tokens(input.size() + 32);
-              int n_tokens = llama_tokenize(vocab, input.c_str(), input.size(), tokens.data(), tokens.size(), true, true);
-              if (n_tokens < 0) {
-                  tokens.resize(-n_tokens);
-                  n_tokens = llama_tokenize(vocab, input.c_str(), input.size(), tokens.data(), tokens.size(), true, true);
-              }
+          JNIEXPORT jstring JNICALL ${JNI_PREFIX}_nativeGenerateResponse(JNIEnv* env, jobject, jstring jprompt, jfloat temp, jint max_tokens) {
+              if (!g_model || !g_ctx) return env->NewStringUTF("Model not loaded");
+              g_stop = false;
+              const char* prompt = env->GetStringUTFChars(jprompt, nullptr);
+              const llama_vocab* vocab = llama_model_get_vocab(g_model);
+              std::vector<llama_token> tokens(strlen(prompt) + 32);
+              int n_tokens = llama_tokenize(vocab, prompt, strlen(prompt), tokens.data(), tokens.size(), true, true);
+              env->ReleaseStringUTFChars(jprompt, prompt);
+              if (n_tokens < 0) return env->NewStringUTF("");
               tokens.resize(n_tokens);
 
-              llama_memory_clear(llama_get_memory(wrapper->ctx), true);
-
+              llama_memory_clear(llama_get_memory(g_ctx), true);
               llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
-              if (llama_decode(wrapper->ctx, batch) != 0) {
-                  return env->NewStringUTF("");
-              }
+              if (llama_decode(g_ctx, batch) != 0) return env->NewStringUTF("");
 
               auto sparams = llama_sampler_chain_default_params();
               llama_sampler* smpl = llama_sampler_chain_init(sparams);
-              llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
+              llama_sampler_chain_add(smpl, llama_sampler_init_temp(temp));
               llama_sampler_chain_add(smpl, llama_sampler_init_dist(1234));
 
-              std::string output;
-              int limit = maxTokens > 0 ? maxTokens : 256;
-              for (int i = 0; i < limit; ++i) {
-                  llama_token new_token = llama_sampler_sample(smpl, wrapper->ctx, -1);
-                  if (llama_vocab_is_eog(vocab, new_token)) break;
-
+              std::string result;
+              int limit = max_tokens > 0 ? max_tokens : 256;
+              for (int i = 0; i < limit && !g_stop; ++i) {
+                  llama_token id = llama_sampler_sample(smpl, g_ctx, -1);
+                  if (llama_vocab_is_eog(vocab, id)) break;
                   char buf[256];
-                  int n = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, true);
-                  if (n > 0) output.append(buf, n);
-
-                  llama_batch next_batch = llama_batch_get_one(&new_token, 1);
-                  if (llama_decode(wrapper->ctx, next_batch) != 0) break;
+                  int n = llama_token_to_piece(vocab, id, buf, sizeof(buf), 0, true);
+                  if (n > 0) result.append(buf, n);
+                  batch = llama_batch_get_one(&id, 1);
+                  if (llama_decode(g_ctx, batch) != 0) break;
               }
-
               llama_sampler_free(smpl);
-              return env->NewStringUTF(output.c_str());
+              return env->NewStringUTF(result.c_str());
           }
 
-          extern "C" JNIEXPORT void JNICALL
-          Java_com_example_data_gguf_LlamaNativeBridge_nativeRelease(
-                  JNIEnv* /* env */, jobject /* this */, jlong handle) {
-              if (handle == 0) return;
-              auto* wrapper = reinterpret_cast<LlamaContextWrapper*>(handle);
-              if (wrapper->ctx) llama_free(wrapper->ctx);
-              if (wrapper->model) llama_model_free(wrapper->model);
-              delete wrapper;
-              llama_backend_free();
+          JNIEXPORT void JNICALL ${JNI_PREFIX}_nativeStopGeneration(JNIEnv*, jobject) {
+              g_stop = true;
+          }
+
+          JNIEXPORT void JNICALL ${JNI_PREFIX}_nativeUnloadModel(JNIEnv*, jobject) {
+              if (g_ctx) { llama_free(g_ctx); g_ctx = nullptr; }
+              if (g_model) { llama_model_free(g_model); g_model = nullptr; }
+          }
           }
           EOF
 
-          cat << 'EOF' > CMakeLists.txt
-          cmake_minimum_required(VERSION 3.22.1)
-          project(llama_jni)
-          set(CMAKE_CXX_STANDARD 17)
-          set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-          set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-          set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-          set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
-          set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
-          add_subdirectory(/tmp/llama.cpp llama_build)
-          add_library(llama_jni SHARED llama_jni.cpp)
-          target_link_libraries(llama_jni PRIVATE llama ggml)
-          EOF
+          $ANDROID_HOME/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++ \
+            -shared -fPIC -O3 \
+            -I/tmp/llama.cpp/include \
+            -I/tmp/llama.cpp/ggml/include \
+            /tmp/llama_jni.cpp \
+            -Lapp/src/main/jniLibs/arm64-v8a \
+            -lllama -lggml -llog -landroid \
+            -Wl,-rpath,'$ORIGIN' \
+            -o app/src/main/jniLibs/arm64-v8a/libllama_jni.so
 
-          NDK_PATH=$(ls -d $ANDROID_HOME/ndk/* | tail -n 1)
-          cmake -B build \
-            -DCMAKE_TOOLCHAIN_FILE=$NDK_PATH/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-26 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release -j$(nproc)
-          cp build/libllama_jni.so $GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-      - name: Generate Debug Keystore
-        run: keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      - name: Build Debug APK with Native Llama Engine
+        run: ./gradlew assembleDebug --no-daemon
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build Debug APK
-        run: gradle assembleDebug
-
-      - name: Upload EduAI Class 10 APK
+      - name: Upload EduAI-Class-10-Full-APK
         uses: actions/upload-artifact@v4
         with:
           name: EduAI-Class-10-Full-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
