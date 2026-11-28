@@ -19,15 +19,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK & NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK (r26d) & CMake
+      - name: Locate Pre-installed NDK & CMake and Build Native Llama Engine
         run: |
-          sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1"
+          # Find pre-installed NDK directory automatically
+          NDK_DIR=$(ls -d $ANDROID_HOME/ndk/* 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$NDK_DIR" ]; then
+            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1"
+            NDK_DIR="$ANDROID_HOME/ndk/26.3.11579264"
+          fi
+          echo "Using NDK at: $NDK_DIR"
 
-      - name: Auto-Detect Package & Generate llama_jni.cpp + Compile Native Engine
-        run: |
           # Detect existing LlamaJniBridge package name automatically
           BRIDGE_FILE=$(find app/src/main -name "*Llama*Bridge*.kt" -o -name "*Llama*Bridge*.java" | head -n 1)
           if [ -n "$BRIDGE_FILE" ]; then
@@ -44,7 +45,7 @@ jobs:
           git clone --depth 1 https://github.com/ggerganov/llama.cpp.git /tmp/llama.cpp
           mkdir -p /tmp/llama_build
           cmake -S /tmp/llama.cpp -B /tmp/llama_build \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/26.3.11579264/build/cmake/android.toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=$NDK_DIR/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-26 \
             -DBUILD_SHARED_LIBS=ON \
@@ -63,6 +64,7 @@ jobs:
           #include <string>
           #include <vector>
           #include <atomic>
+          #include <cstring>
           #include "llama.h"
 
           static llama_model* g_model = nullptr;
@@ -130,7 +132,8 @@ jobs:
           }
           EOF
 
-          $ANDROID_HOME/ndk/26.3.11579264/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang++ \
+          CLANG_BIN=$(ls $NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android*-clang++ | sort -V | tail -n 1)
+          $CLANG_BIN \
             -shared -fPIC -O3 \
             -I/tmp/llama.cpp/include \
             -I/tmp/llama.cpp/ggml/include \
